@@ -447,54 +447,9 @@ function StepDeploy({ logs, results, selectedIds, running }) {
   )
 }
 
-// ── Save as Template modal ────────────────────────────────────────────────────
-function SaveTemplateModal({ open, onClose, onSave }) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-
-  function handleSave() {
-    if (!name.trim()) return
-    onSave({ name: name.trim(), description })
-    setName('')
-    setDescription('')
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Save as Template" size="sm">
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Standard MSP Baseline"
-            autoFocus
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            placeholder="What does this template cover?"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy resize-none"
-          />
-        </div>
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleSave} disabled={!name.trim()}>Save Template</Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
 // ── Main wizard ───────────────────────────────────────────────────────────────
 export default function CreatePolicies() {
-  const { settings, role, saveTemplate, addNotification } = useStore()
+  const { settings, addNotification } = useStore()
   const [authMode, setAuthMode] = useState('itglue')
   const [step, setStep] = useState(1)
   const [org, setOrg] = useState(null)
@@ -507,7 +462,6 @@ export default function CreatePolicies() {
   const [deployResults, setDeployResults] = useState({})
   const [running, setRunning] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
 
   // Auto-set prefix from org name when it changes
   useEffect(() => {
@@ -564,18 +518,6 @@ export default function CreatePolicies() {
     } finally {
       setRunning(false)
     }
-  }
-
-  const handleSaveTemplate = async ({ name, description }) => {
-    setSaveTemplateOpen(false)
-    await saveTemplate({
-      name,
-      description,
-      prefix: usePrefix ? prefix : '',
-      selectedIds,
-      policyConfigs,
-    })
-    addNotification(`Template "${name}" saved`, 'success')
   }
 
   const reset = () => {
@@ -644,11 +586,6 @@ export default function CreatePolicies() {
               Back
             </Button>
             <div className="flex gap-2">
-              {step === 5 && role === 'admin' && (
-                <Button variant="secondary" onClick={() => setSaveTemplateOpen(true)}>
-                  Save as Template
-                </Button>
-              )}
               {step < 6 && (
                 <Button
                   variant="primary"
@@ -684,11 +621,6 @@ export default function CreatePolicies() {
         </div>
       </Modal>
 
-      <SaveTemplateModal
-        open={saveTemplateOpen}
-        onClose={() => setSaveTemplateOpen(false)}
-        onSave={handleSaveTemplate}
-      />
     </div>
   )
 }

@@ -43,14 +43,25 @@ export default function Modules() {
     return () => { unOut?.(); unErr?.() }
   }, [])
 
+  function notifyResult(resultLogs, successMsg) {
+    const errors = resultLogs.filter(l => l.startsWith('ERROR:'))
+    if (errors.length > 0) {
+      addNotification(`Install failed — check output below for details`, 'error')
+    } else if (resultLogs.some(l => l.startsWith('SUCCESS:'))) {
+      addNotification(successMsg, 'success')
+    } else {
+      addNotification('Operation completed — check output below', 'info')
+    }
+  }
+
   const handleInstall = async (moduleName) => {
     if (!window.api) return
     setInstalling((s) => new Set([...s, moduleName]))
     setOperationRunning(true)
     setLogs([])
     try {
-      await window.api.modules.install([moduleName])
-      addNotification(`${moduleName} install complete`, 'success')
+      const result = await window.api.modules.install([moduleName])
+      notifyResult(result || [], `${moduleName} installed successfully`)
       await loadModules()
     } catch (err) {
       addNotification(`Install failed: ${err.message}`, 'error')
@@ -66,8 +77,8 @@ export default function Modules() {
     setOperationRunning(true)
     setLogs([])
     try {
-      await window.api.modules.update([moduleName])
-      addNotification(`${moduleName} updated`, 'success')
+      const result = await window.api.modules.update([moduleName])
+      notifyResult(result || [], `${moduleName} updated successfully`)
       await loadModules()
     } catch (err) {
       addNotification(`Update failed: ${err.message}`, 'error')
@@ -84,8 +95,8 @@ export default function Modules() {
     setOperationRunning(true)
     setLogs([])
     try {
-      await window.api.modules.install(toInstall)
-      addNotification('All missing modules installed', 'success')
+      const result = await window.api.modules.install(toInstall)
+      notifyResult(result || [], 'All missing modules installed successfully')
       await loadModules()
     } catch (err) {
       addNotification(`Install all failed: ${err.message}`, 'error')
@@ -101,8 +112,8 @@ export default function Modules() {
     setOperationRunning(true)
     setLogs([])
     try {
-      await window.api.modules.update(toUpdate)
-      addNotification('All modules updated', 'success')
+      const result = await window.api.modules.update(toUpdate)
+      notifyResult(result || [], 'All modules updated successfully')
       await loadModules()
     } catch (err) {
       addNotification(`Update all failed: ${err.message}`, 'error')

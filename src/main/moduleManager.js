@@ -11,10 +11,20 @@ const REQUIRED_MODULES = [
 async function getModuleStatus(win) {
   const moduleNames = REQUIRED_MODULES.map(m => m.name)
   const script = `
+$ProgressPreference = 'SilentlyContinue'
 $moduleNames = @(${moduleNames.map(n => `'${n}'`).join(',')})
 $results = @()
 foreach ($name in $moduleNames) {
-    $installed = Get-Module -ListAvailable -Name $name | Sort-Object Version -Descending | Select-Object -First 1
+    # Get-InstalledModule is more reliable for modules installed via Install-Module
+    $installed = Get-InstalledModule -Name $name -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
+    # Fall back to Get-Module -ListAvailable if not found via PowerShellGet
+    if (-not $installed) {
+        $mod = Get-Module -ListAvailable -Name $name | Sort-Object Version -Descending | Select-Object -First 1
+        if ($mod) {
+            $installed = [PSCustomObject]@{ Version = $mod.Version }
+        }
+    }
+
     $latest = $null
     try {
         $latest = Find-Module -Name $name -Repository PSGallery -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -68,19 +78,22 @@ $InformationPreference = 'SilentlyContinue'
 `
 
 const BOOTSTRAP = `
-# Ensure NuGet provider is present (required for Install-Module in non-interactive sessions)
+# Force TLS 1.2 (required by PSGallery)
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# Ensure NuGet provider is present
 try {
     $nuget = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
     if (-not $nuget -or [version]$nuget.Version -lt [version]'2.8.5.201') {
         Write-Output "Bootstrapping NuGet provider..."
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction Stop
-        Write-Output "NuGet provider installed"
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser
+        Write-Output "NuGet provider ready"
     }
 } catch {
-    Write-Output "WARNING: NuGet bootstrap failed - $($_.Exception.Message)"
+    Write-Output "WARNING: NuGet bootstrap - $($_.Exception.Message)"
 }
 
-# Trust PSGallery so Install-Module doesn't prompt
+# Trust PSGallery
 try {
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
 } catch {}
@@ -94,7 +107,7 @@ $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "INSTALLING: $mod"
     try {
-        Install-Module -Name $mod -Scope CurrentUser -Force -AllowClobber -Repository PSGallery -ErrorAction Stop
+        Install-Module -Name $mod -Scope CurrentUser -Force -AllowClobber -AcceptLicense -Repository PSGallery -ErrorAction Stop
         Write-Output "SUCCESS: $mod installed"
     } catch {
         Write-Output "ERROR: $mod - $($_.Exception.Message)"

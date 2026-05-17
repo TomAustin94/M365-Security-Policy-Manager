@@ -9,13 +9,14 @@ const useStore = create((set, get) => ({
     powershellPath: '',
     executionPolicy: 'RemoteSigned',
     theme: 'system',
+    adminPin: '',
   },
   setSettings: (patch) =>
     set((s) => ({ settings: { ...s.settings, ...patch } })),
 
   loadSettings: async () => {
     if (!window.api) return
-    const keys = ['itGlueApiKey', 'itGlueBaseUrl', 'defaultPolicyPrefix', 'powershellPath', 'executionPolicy', 'theme']
+    const keys = ['itGlueApiKey', 'itGlueBaseUrl', 'defaultPolicyPrefix', 'powershellPath', 'executionPolicy', 'theme', 'adminPin']
     const values = await Promise.all(keys.map((k) => window.api.store.get(k)))
     const patch = {}
     keys.forEach((k, i) => { if (values[i] !== undefined && values[i] !== null) patch[k] = values[i] })
@@ -104,6 +105,36 @@ const useStore = create((set, get) => ({
   },
   removeNotification: (id) =>
     set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) })),
+
+  // ── Role ──────────────────────────────────────────────────────────────────
+  role: null, // 'admin' | 'engineer' | null (session-only, not persisted)
+  setRole: (role) => set({ role }),
+
+  // ── Templates ─────────────────────────────────────────────────────────────
+  templates: [],
+  loadTemplates: async () => {
+    if (!window.api) return
+    const t = await window.api.store.get('templates')
+    set({ templates: t || [] })
+  },
+  saveTemplate: async (template) => {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const t = { ...template, id, createdAt: new Date().toISOString() }
+    const templates = [...get().templates, t]
+    await window.api.store.set('templates', templates)
+    set({ templates })
+    return t
+  },
+  updateTemplate: async (id, patch) => {
+    const templates = get().templates.map((t) => (t.id === id ? { ...t, ...patch } : t))
+    await window.api.store.set('templates', templates)
+    set({ templates })
+  },
+  deleteTemplate: async (id) => {
+    const templates = get().templates.filter((t) => t.id !== id)
+    await window.api.store.set('templates', templates)
+    set({ templates })
+  },
 
   // ── First Run ─────────────────────────────────────────────────────────────
   firstRun: false,

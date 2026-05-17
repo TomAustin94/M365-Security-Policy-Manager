@@ -61,8 +61,15 @@ $results | ConvertTo-Json -Depth 3
   }))
 }
 
+const PS_SILENT_PREFS = `
+$ProgressPreference   = 'SilentlyContinue'
+$VerbosePreference    = 'SilentlyContinue'
+$InformationPreference = 'SilentlyContinue'
+`
+
 async function installModules(moduleNames, onData, onError) {
   const script = `
+${PS_SILENT_PREFS}
 $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "INSTALLING: $mod"
@@ -80,6 +87,7 @@ Write-Output "DONE"
 
 async function updateModules(moduleNames, onData, onError) {
   const script = `
+${PS_SILENT_PREFS}
 $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "UPDATING: $mod"

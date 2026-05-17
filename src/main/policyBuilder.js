@@ -1,12 +1,26 @@
-function buildConnectScript(credentials) {
+function buildConnectScript(credentials, authMode) {
+  if (authMode === 'interactive') {
+    const tenantArg = credentials?.tenantId ? `-TenantId '${credentials.tenantId}'` : ''
+    return `
+Write-Output "CONNECTING: Launching interactive sign-in..."
+try {
+    Connect-MgGraph ${tenantArg} -Scopes "Policy.ReadWrite.ConditionalAccess","Policy.Read.All","DeviceManagementConfiguration.ReadWrite.All" -NoWelcome
+    Write-Output "CONNECTED: Successfully connected to Microsoft Graph"
+} catch {
+    Write-Output "ERROR: Failed to connect - $($_.Exception.Message)"
+    exit 1
+}
+`
+  }
+
   return `
-$tenantId = '${credentials.tenantId || ''}'
 $username = '${credentials.username}'
 $securePassword = ConvertTo-SecureString '${credentials.password}' -AsPlainText -Force
 $cred = New-Object System.Management.Automation.PSCredential($username, $securePassword)
+${credentials.tenantId ? `$tenantId = '${credentials.tenantId}'` : ''}
 
 try {
-    Connect-MgGraph -TenantId $tenantId -Credential $cred -Scopes "Policy.ReadWrite.ConditionalAccess","Policy.Read.All" -NoWelcome
+    Connect-MgGraph ${credentials.tenantId ? '-TenantId $tenantId' : ''} -Credential $cred -Scopes "Policy.ReadWrite.ConditionalAccess","Policy.Read.All" -NoWelcome
     Write-Output "CONNECTED: Successfully connected to Microsoft Graph"
 } catch {
     Write-Output "ERROR: Failed to connect - $($_.Exception.Message)"
@@ -98,9 +112,9 @@ const SCRIPT_FUNCTIONS = {
   createGenericPolicy,
 }
 
-function buildScript(policies, credentials, prefix) {
+function buildScript(policies, credentials, prefix, authMode = 'manual') {
   const parts = []
-  parts.push(buildConnectScript(credentials))
+  parts.push(buildConnectScript(credentials, authMode))
 
   for (const policy of policies) {
     if (policy.scriptFn === 'createRequireMfaPolicy') {

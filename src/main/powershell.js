@@ -55,9 +55,13 @@ function runScript(script, onData, onError) {
 
     const allOutput = []
 
+    // Strip ANSI/VT control sequences (progress bars, cursor codes, etc.)
+    const stripCtrl = (s) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b[()][AB]/g, '')
+
     proc.stdout.on('data', (data) => {
       const lines = data.toString().split('\n')
-      lines.forEach((line) => {
+      lines.forEach((raw) => {
+        const line = stripCtrl(raw).trimEnd()
         if (line.trim()) {
           allOutput.push(line)
           if (onData) onData(line)
@@ -67,7 +71,8 @@ function runScript(script, onData, onError) {
 
     proc.stderr.on('data', (data) => {
       const lines = data.toString().split('\n')
-      lines.forEach((line) => {
+      lines.forEach((raw) => {
+        const line = stripCtrl(raw).trimEnd()
         if (line.trim()) {
           if (onError) onError(line)
         }

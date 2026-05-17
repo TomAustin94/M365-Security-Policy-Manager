@@ -236,40 +236,6 @@ export default function Settings() {
           </Card.Body>
         </Card>
 
-        {/* Appearance */}
-        <Card>
-          <Card.Header>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                </svg>
-              </div>
-              <h2 className="text-sm font-semibold text-gray-900">Appearance</h2>
-            </div>
-          </Card.Header>
-          <Card.Body>
-            <FormGroup label="Theme" hint="Controls the application colour scheme.">
-              <div className="flex gap-3">
-                {['system', 'light', 'dark'].map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => set('theme', t)}
-                    className={[
-                      'flex-1 py-2.5 rounded-md border text-sm font-medium capitalize transition-all',
-                      form.theme === t
-                        ? 'border-navy bg-navy text-white'
-                        : 'border-gray-200 text-gray-600 hover:border-navy-200',
-                    ].join(' ')}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </FormGroup>
-          </Card.Body>
-        </Card>
-
         {/* Save button */}
         <div className="flex justify-end">
           <Button

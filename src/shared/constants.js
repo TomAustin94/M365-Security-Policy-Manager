@@ -1,6 +1,6 @@
 // All 365 M365 Security Policy Definitions
 
-const POLICY_CATEGORIES = {
+export const POLICY_CATEGORIES = {
   CA: 'Conditional Access',
   IP: 'Identity Protection',
   EX: 'Exchange Online',
@@ -13,7 +13,7 @@ const POLICY_CATEGORIES = {
   TB: 'Tenant Baseline',
 }
 
-const POLICIES = [
+export const POLICIES = [
   // ─── Conditional Access CA001–CA050 ───────────────────────────────────────
   { id: 'CA001', category: 'Conditional Access', name: 'Require MFA for All Users', description: 'Enforces multi-factor authentication for all users across all applications.', severity: 'critical', scriptFn: 'createRequireMfaPolicy', defaultEnabled: true, dependencies: [], platforms: ['all'] },
   { id: 'CA002', category: 'Conditional Access', name: 'Block Legacy Authentication', description: 'Blocks all legacy authentication protocols that do not support MFA.', severity: 'critical', scriptFn: 'createBlockLegacyAuthPolicy', defaultEnabled: true, dependencies: [], platforms: ['all'] },
@@ -400,12 +400,10 @@ const POLICIES = [
   { id: 'TB025', category: 'Tenant Baseline', name: 'Enable Additional Security Context in Authenticator', description: 'Enables location and app name context in Authenticator push notifications.', severity: 'high', scriptFn: 'createGenericPolicy', defaultEnabled: true, dependencies: [], platforms: ['all'] },
 ]
 
-const POLICIES_BY_CATEGORY = POLICIES.reduce((acc, policy) => {
+export const POLICIES_BY_CATEGORY = POLICIES.reduce((acc, policy) => {
   if (!acc[policy.category]) acc[policy.category] = []
   acc[policy.category].push(policy)
   return acc
 }, {})
 
-const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
-
-module.exports = { POLICIES, POLICIES_BY_CATEGORY, POLICY_CATEGORIES, SEVERITY_ORDER }
+export const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }

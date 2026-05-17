@@ -8,7 +8,7 @@
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:renderer": "vite src/renderer --port 5173",
     "dev:main": "nodemon --watch src/main --exec electron .",
-    "build:renderer": "vite build src/renderer --outDir ../../dist-renderer --emptyOutDir",
+    "build:renderer": "vite build src/renderer --base ./ --outDir ../../dist-renderer --emptyOutDir",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
     "build:mac": "electron-builder --mac",

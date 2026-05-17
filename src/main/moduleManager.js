@@ -12,7 +12,6 @@ async function getModuleStatus(win) {
   const moduleNames = REQUIRED_MODULES.map(m => m.name)
   const script = `
 $ProgressPreference = 'SilentlyContinue'
-Import-Module PowerShellGet -ErrorAction SilentlyContinue
 $moduleNames = @(${moduleNames.map(n => `'${n}'`).join(',')})
 $results = @()
 foreach ($name in $moduleNames) {
@@ -79,49 +78,40 @@ $InformationPreference = 'SilentlyContinue'
 `
 
 const BOOTSTRAP = `
-# TLS 1.2 — .NET Framework/Windows only; .NET Core (Linux/macOS PS7) handles TLS automatically
+# Windows-only: TLS 1.2 + NuGet package provider
+# (Linux/macOS PS7 uses .NET Core which handles TLS natively and does not use NuGet provider)
 if ($IsWindows) {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     } catch {}
-}
-
-# NuGet package provider — Windows only; not needed by PowerShellGet on Linux/macOS
-if ($IsWindows) {
     try {
         $nuget = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
         if (-not $nuget -or [version]$nuget.Version -lt [version]'2.8.5.201') {
-            Write-Output "Bootstrapping NuGet provider..."
+            Write-Output "SETUP: Installing NuGet provider..."
             Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser
-            Write-Output "NuGet provider ready"
+            Write-Output "SETUP: NuGet provider ready"
         }
     } catch {
         Write-Output "WARNING: NuGet bootstrap - $($_.Exception.Message)"
     }
+    try {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+    } catch {}
 }
-
-# Ensure PowerShellGet is loaded
-Import-Module PowerShellGet -ErrorAction SilentlyContinue
-
-# Trust PSGallery (register if missing — can happen on fresh Linux installs)
-try {
-    if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-        Write-Output "Registering PSGallery..."
-        Register-PSRepository -Default -ErrorAction SilentlyContinue
-    }
-    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
-} catch {}
+# -Force on Install-Module handles the PSGallery trust bypass on Linux/macOS
 `
 
 async function installModules(moduleNames, onData, onError) {
   const script = `
 ${PS_SILENT_PREFS}
+Write-Output "SETUP: Starting on $(if ($IsLinux) { 'Linux' } elseif ($IsWindows) { 'Windows' } else { 'macOS' })..."
 ${BOOTSTRAP}
+Write-Output "SETUP: Package source ready"
 $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
-    Write-Output "INSTALLING: $mod"
+    Write-Output "INSTALLING: $mod (this may take several minutes for large modules)..."
     try {
-        Install-Module -Name $mod -Scope CurrentUser -Force -AllowClobber -AcceptLicense -Repository PSGallery -ErrorAction Stop
+        Install-Module -Name $mod -Scope CurrentUser -Force -AllowClobber -AcceptLicense -SkipPublisherCheck -Repository PSGallery -ErrorAction Stop
         Write-Output "SUCCESS: $mod installed"
     } catch {
         Write-Output "ERROR: $mod - $($_.Exception.Message)"
@@ -135,10 +125,12 @@ Write-Output "DONE"
 async function updateModules(moduleNames, onData, onError) {
   const script = `
 ${PS_SILENT_PREFS}
+Write-Output "SETUP: Starting on $(if ($IsLinux) { 'Linux' } elseif ($IsWindows) { 'Windows' } else { 'macOS' })..."
 ${BOOTSTRAP}
+Write-Output "SETUP: Package source ready"
 $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
-    Write-Output "UPDATING: $mod"
+    Write-Output "UPDATING: $mod (this may take several minutes)..."
     try {
         Update-Module -Name $mod -Force -AcceptLicense -ErrorAction Stop
         Write-Output "SUCCESS: $mod updated"

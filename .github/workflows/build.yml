@@ -112,8 +112,8 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: linux-appimage
-          path: dist/*.AppImage
+          name: linux-deb
+          path: dist/*.deb
 
   # ── 3a. Both builds passed → attach artifacts and publish ──────────────────
   publish-release:
@@ -133,7 +133,7 @@ jobs:
         run: |
           gh release upload "v${{ needs.prepare-release.outputs.version }}" \
             windows-installer/*.exe \
-            linux-appimage/*.AppImage \
+            linux-deb/*.deb \
             --repo "${{ github.repository }}"
 
           gh release edit "v${{ needs.prepare-release.outputs.version }}" \

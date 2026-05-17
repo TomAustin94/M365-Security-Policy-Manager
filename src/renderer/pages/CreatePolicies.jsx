@@ -8,8 +8,9 @@ import Badge from '../components/Badge'
 import LogPanel from '../components/LogPanel'
 import SearchInput from '../components/SearchInput'
 import Modal from '../components/Modal'
+import ConfigurePolicies from './ConfigurePolicies'
 
-const STEPS = ['Org & Credentials', 'Configure Prefix', 'Select Policies', 'Review', 'Deploy']
+const STEPS = ['Org & Credentials', 'Configure Prefix', 'Select Policies', 'Configure Policies', 'Review', 'Deploy']
 
 function severityBadge(sev) {
   const v = { critical: 'error', high: 'high', medium: 'warning', low: 'info', info: 'neutral' }[sev] || 'neutral'
@@ -335,8 +336,11 @@ function StepSelectPolicies({ selected, setSelected }) {
   )
 }
 
-// ── Step 4: Review ────────────────────────────────────────────────────────────
-function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds }) {
+// ── Step 4: Configure Policies — delegated to ConfigurePolicies component ─────
+// (inline in wizard body below)
+
+// ── Step 5: Review ────────────────────────────────────────────────────────────
+function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds, policyConfigs }) {
   const selectedPolicies = POLICIES.filter((p) => selectedIds.includes(p.id))
   const byCategory = selectedPolicies.reduce((acc, p) => {
     if (!acc[p.category]) acc[p.category] = []
@@ -345,6 +349,8 @@ function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds
   }, {})
 
   const authLabel = { itglue: 'IT Glue → WAM', interactive: 'WAM / Browser' }[authMode]
+
+  const customised = Object.keys(policyConfigs || {}).filter(id => selectedIds.includes(id)).length
 
   return (
     <div className="space-y-5">
@@ -380,6 +386,7 @@ function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds
 
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
         <strong>{selectedIds.length} policies</strong> will be created across {Object.keys(byCategory).length} categories.
+        {customised > 0 && <span className="ml-2 text-navy font-medium">{customised} with custom configuration.</span>}
       </div>
 
       <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
@@ -387,13 +394,20 @@ function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds
           <div key={cat}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{cat}</p>
             <div className="space-y-1">
-              {policies.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 py-1.5 px-3 rounded-md hover:bg-gray-50">
-                  <span className="text-xs font-mono text-gray-400 w-12 flex-shrink-0">{p.id}</span>
-                  <span className="text-sm text-gray-800 flex-1">{p.name}</span>
-                  {severityBadge(p.severity)}
-                </div>
-              ))}
+              {policies.map((p) => {
+                const cfg = policyConfigs?.[p.id] || {}
+                const stateVal = cfg.state || 'enabled'
+                const stateLabel = { enabled: 'On', disabled: 'Off', enabledForReportingButNotEnforced: 'Report' }[stateVal] || stateVal
+                const stateVariant = { enabled: 'success', disabled: 'neutral', enabledForReportingButNotEnforced: 'warning' }[stateVal] || 'neutral'
+                return (
+                  <div key={p.id} className="flex items-center gap-3 py-1.5 px-3 rounded-md hover:bg-gray-50">
+                    <span className="text-xs font-mono text-gray-400 w-12 flex-shrink-0">{p.id}</span>
+                    <span className="text-sm text-gray-800 flex-1">{p.name}</span>
+                    <Badge variant={stateVariant}>{stateLabel}</Badge>
+                    {severityBadge(p.severity)}
+                  </div>
+                )
+              })}
             </div>
           </div>
         ))}
@@ -402,7 +416,7 @@ function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds
   )
 }
 
-// ── Step 5: Deploy ────────────────────────────────────────────────────────────
+// ── Step 6: Deploy ────────────────────────────────────────────────────────────
 function StepDeploy({ logs, results, selectedIds, running }) {
   const selectedPolicies = POLICIES.filter((p) => selectedIds.includes(p.id))
   return (
@@ -443,6 +457,7 @@ export default function CreatePolicies() {
   const [usePrefix, setUsePrefix] = useState(!!settings.defaultPolicyPrefix)
   const [prefix, setPrefix] = useState(settings.defaultPolicyPrefix || '')
   const [selectedIds, setSelectedIds] = useState(POLICIES.filter((p) => p.defaultEnabled).map((p) => p.id))
+  const [policyConfigs, setPolicyConfigs] = useState({})
   const [deployLogs, setDeployLogs] = useState([])
   const [deployResults, setDeployResults] = useState({})
   const [running, setRunning] = useState(false)
@@ -469,7 +484,8 @@ export default function CreatePolicies() {
     }
     if (step === 2) return true
     if (step === 3) return selectedIds.length > 0
-    if (step === 4) return true
+    if (step === 4) return true  // configure step — always can proceed
+    if (step === 5) return true  // review step
     return false
   }
 
@@ -492,6 +508,7 @@ export default function CreatePolicies() {
         credentials,
         prefix: usePrefix ? prefix : '',
         authMode,
+        policyConfigs,
       })
       setDeployResults(result.results || {})
       const successCount = Object.values(result.results || {}).filter((v) => v === 'success').length
@@ -505,6 +522,7 @@ export default function CreatePolicies() {
 
   const reset = () => {
     setStep(1); setOrg(null); setCredentials(null)
+    setPolicyConfigs({})
     setDeployLogs([]); setDeployResults({})
   }
 
@@ -543,14 +561,22 @@ export default function CreatePolicies() {
           )}
           {step === 3 && <StepSelectPolicies selected={selectedIds} setSelected={setSelectedIds} />}
           {step === 4 && (
+            <ConfigurePolicies
+              selectedIds={selectedIds}
+              policyConfigs={policyConfigs}
+              setPolicyConfigs={setPolicyConfigs}
+            />
+          )}
+          {step === 5 && (
             <StepReview
               authMode={authMode} org={org}
               credentials={credentials}
               prefix={prefix} usePrefix={usePrefix}
               selectedIds={selectedIds}
+              policyConfigs={policyConfigs}
             />
           )}
-          {step === 5 && (
+          {step === 6 && (
             <StepDeploy logs={deployLogs} results={deployResults} selectedIds={selectedIds} running={running} />
           )}
         </Card.Body>
@@ -560,16 +586,16 @@ export default function CreatePolicies() {
               Back
             </Button>
             <div className="flex gap-2">
-              {step < 5 && (
+              {step < 6 && (
                 <Button
                   variant="primary"
-                  onClick={() => step === 4 ? setConfirmOpen(true) : setStep((s) => s + 1)}
+                  onClick={() => step === 5 ? setConfirmOpen(true) : setStep((s) => s + 1)}
                   disabled={!canNext() || running}
                 >
-                  {step === 4 ? 'Deploy Policies' : 'Next'}
+                  {step === 5 ? 'Deploy Policies' : 'Next'}
                 </Button>
               )}
-              {step === 5 && !running && Object.keys(deployResults).length > 0 && (
+              {step === 6 && !running && Object.keys(deployResults).length > 0 && (
                 <Button variant="secondary" onClick={reset}>Start New</Button>
               )}
             </div>
@@ -584,7 +610,7 @@ export default function CreatePolicies() {
         title="Confirm Policy Deployment"
         confirmLabel="Deploy Now"
         cancelLabel="Cancel"
-        onConfirm={() => { setStep(5); handleDeploy() }}
+        onConfirm={() => { setStep(6); handleDeploy() }}
       >
         <div className="py-2 space-y-2">
           <p>You are about to create <strong>{selectedIds.length} policies</strong> in the <strong>{org?.name}</strong> tenant.</p>

@@ -130,8 +130,8 @@ try {
   })
 
   ipcMain.handle('policies:create', async (_, options) => {
-    const { policies, credentials, prefix, authMode } = options
-    const script = buildScript(policies, credentials, prefix, authMode)
+    const { policies, credentials, prefix, authMode, policyConfigs } = options
+    const script = buildScript(policies, credentials, prefix, authMode, policyConfigs || {})
     const logs = []
     const results = {}
 

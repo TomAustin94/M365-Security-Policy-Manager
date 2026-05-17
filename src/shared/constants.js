@@ -407,3 +407,90 @@ export const POLICIES_BY_CATEGORY = POLICIES.reduce((acc, policy) => {
 }, {})
 
 export const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
+
+// ─── Configurable field schemas ───────────────────────────────────────────────
+
+const _stateCA = { key: 'state', label: 'Policy State', type: 'select', default: 'enabled', options: [
+  { value: 'enabled', label: 'Enabled' },
+  { value: 'enabledForReportingButNotEnforced', label: 'Report Only (Monitor)' },
+  { value: 'disabled', label: 'Disabled' },
+]}
+
+const _stateSimple = { key: 'state', label: 'Policy State', type: 'select', default: 'enabled', options: [
+  { value: 'enabled', label: 'Enabled' },
+  { value: 'disabled', label: 'Disabled' },
+]}
+
+const _excludeGroups = {
+  key: 'excludeGroups', label: 'Exclude Groups', type: 'text', default: '',
+  hint: 'Comma-separated Azure AD Group Object IDs to exclude from this policy',
+}
+
+const _assignedGroups = {
+  key: 'assignedGroups', label: 'Assigned Groups', type: 'text', default: '',
+  hint: 'Comma-separated group names or Object IDs (leave blank for all devices/users)',
+}
+
+const _notifEmail = {
+  key: 'notificationEmail', label: 'Notification Email', type: 'text', default: '',
+  hint: 'Email for alerts and notifications (leave blank for tenant default)',
+}
+
+export const CATEGORY_FIELDS = {
+  'Conditional Access':    [_stateCA, _excludeGroups],
+  'Identity Protection':   [_stateSimple, _notifEmail],
+  'Exchange Online':       [_stateSimple],
+  'SharePoint & OneDrive': [_stateSimple],
+  'Teams':                 [_stateSimple],
+  'Intune / Endpoint':     [_stateSimple, _assignedGroups],
+  'Defender':              [_stateSimple, _notifEmail],
+  'Audit & Compliance':    [_stateSimple, _notifEmail],
+  'Admin Security':        [_stateSimple],
+  'Tenant Baseline':       [_stateSimple],
+}
+
+export const POLICY_EXTRA_FIELDS = {
+  CA015: [{ key: 'sessionFrequencyHours', label: 'Re-auth Frequency (hours)', type: 'number', default: 8, min: 1, max: 720 }],
+  CA028: [
+    { key: 'locationName', label: 'Location Name', type: 'text', default: 'Corporate Office IPs' },
+    { key: 'ipRanges', label: 'Office IP Ranges (CIDR)', type: 'text', default: '', hint: 'e.g. 203.0.113.0/24, 10.0.0.0/8' },
+  ],
+  CA029: [
+    { key: 'locationName', label: 'Location Name', type: 'text', default: 'Approved Countries' },
+    { key: 'allowedCountries', label: 'Allowed Country Codes', type: 'text', default: 'AU,NZ,GB,US,CA', hint: 'Comma-separated ISO 3166-1 alpha-2 codes' },
+  ],
+  CA045: [{ key: 'sessionLifetimeHours', label: 'Admin Session Lifetime (hours)', type: 'number', default: 1, min: 1, max: 24 }],
+  EX004: [
+    { key: 'spamAction', label: 'Spam Action', type: 'select', default: 'Quarantine', options: [
+      { value: 'Quarantine', label: 'Quarantine' },
+      { value: 'MoveToJmf', label: 'Move to Junk Folder' },
+      { value: 'Delete', label: 'Delete' },
+    ]},
+    { key: 'highConfidenceSpamAction', label: 'High Confidence Spam', type: 'select', default: 'Quarantine', options: [
+      { value: 'Quarantine', label: 'Quarantine' },
+      { value: 'Delete', label: 'Delete' },
+    ]},
+  ],
+  EX010: [
+    { key: 'protectedDomains', label: 'Protected Domains', type: 'text', default: '', hint: 'Your tenant domains to protect from impersonation (comma-sep)' },
+    { key: 'protectedUsers', label: 'Protected Users (emails)', type: 'text', default: '', hint: 'Key users to protect from impersonation (comma-sep emails)' },
+  ],
+  EX029: [{ key: 'retentionYears', label: 'Retention Period (years)', type: 'number', default: 7, min: 1, max: 10 }],
+  EN004: [{ key: 'minOsVersion', label: 'Min Windows Version', type: 'text', default: '10.0.19045.0', hint: 'e.g. 10.0.22621.0 for Win 11 22H2' }],
+  EN008: [{ key: 'minMacOsVersion', label: 'Min macOS Version', type: 'text', default: '13.0' }],
+  EN010: [{ key: 'minIosVersion', label: 'Min iOS Version', type: 'text', default: '16.0' }],
+  EN013: [{ key: 'minAndroidVersion', label: 'Min Android Version', type: 'text', default: '11.0' }],
+  EN034: [{ key: 'notificationEmail', label: 'Non-compliance Notification Email', type: 'text', default: '', hint: 'Email notified when a device becomes non-compliant' }],
+  EN035: [{ key: 'gracePeriodDays', label: 'Grace Period (days)', type: 'number', default: 3, min: 1, max: 30 }],
+  AC012: [{ key: 'retentionYears', label: 'Retention Years', type: 'number', default: 7, min: 1, max: 10 }],
+  AC013: [{ key: 'retentionYears', label: 'Retention Years', type: 'number', default: 7, min: 1, max: 10 }],
+  AC014: [{ key: 'retentionYears', label: 'Retention Years', type: 'number', default: 7, min: 1, max: 10 }],
+  AS005: [{ key: 'maxActivationHours', label: 'Max Role Activation (hours)', type: 'number', default: 8, min: 1, max: 24 }],
+  AS008: [{ key: 'maxGlobalAdmins', label: 'Alert Threshold (admins)', type: 'number', default: 5, min: 2, max: 20 }],
+  TB015: [{ key: 'lockoutThreshold', label: 'Lockout After (attempts)', type: 'number', default: 10, min: 3, max: 50 }],
+  SP011: [{ key: 'guestExpiryDays', label: 'Guest Access Expiry (days)', type: 'number', default: 30, min: 1, max: 365 }],
+  TB021: [
+    { key: 'technicalContact', label: 'Technical Contact Email', type: 'text', default: '' },
+    { key: 'privacyUrl', label: 'Privacy Statement URL', type: 'text', default: '' },
+  ],
+}

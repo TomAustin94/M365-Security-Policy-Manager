@@ -50,6 +50,7 @@ function runScript(script, onData, onError) {
       '-Command', '-',
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
       env: { ...process.env },
     })
 

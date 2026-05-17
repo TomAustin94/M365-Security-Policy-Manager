@@ -67,9 +67,29 @@ $VerbosePreference    = 'SilentlyContinue'
 $InformationPreference = 'SilentlyContinue'
 `
 
+const BOOTSTRAP = `
+# Ensure NuGet provider is present (required for Install-Module in non-interactive sessions)
+try {
+    $nuget = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
+    if (-not $nuget -or [version]$nuget.Version -lt [version]'2.8.5.201') {
+        Write-Output "Bootstrapping NuGet provider..."
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction Stop
+        Write-Output "NuGet provider installed"
+    }
+} catch {
+    Write-Output "WARNING: NuGet bootstrap failed - $($_.Exception.Message)"
+}
+
+# Trust PSGallery so Install-Module doesn't prompt
+try {
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+} catch {}
+`
+
 async function installModules(moduleNames, onData, onError) {
   const script = `
 ${PS_SILENT_PREFS}
+${BOOTSTRAP}
 $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "INSTALLING: $mod"

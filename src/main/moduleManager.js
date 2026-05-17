@@ -12,6 +12,7 @@ async function getModuleStatus(win) {
   const moduleNames = REQUIRED_MODULES.map(m => m.name)
   const script = `
 $ProgressPreference = 'SilentlyContinue'
+Import-Module PowerShellGet -ErrorAction SilentlyContinue
 $moduleNames = @(${moduleNames.map(n => `'${n}'`).join(',')})
 $results = @()
 foreach ($name in $moduleNames) {
@@ -78,23 +79,36 @@ $InformationPreference = 'SilentlyContinue'
 `
 
 const BOOTSTRAP = `
-# Force TLS 1.2 (required by PSGallery)
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-
-# Ensure NuGet provider is present
-try {
-    $nuget = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
-    if (-not $nuget -or [version]$nuget.Version -lt [version]'2.8.5.201') {
-        Write-Output "Bootstrapping NuGet provider..."
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser
-        Write-Output "NuGet provider ready"
-    }
-} catch {
-    Write-Output "WARNING: NuGet bootstrap - $($_.Exception.Message)"
+# TLS 1.2 — .NET Framework/Windows only; .NET Core (Linux/macOS PS7) handles TLS automatically
+if ($IsWindows) {
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    } catch {}
 }
 
-# Trust PSGallery
+# NuGet package provider — Windows only; not needed by PowerShellGet on Linux/macOS
+if ($IsWindows) {
+    try {
+        $nuget = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
+        if (-not $nuget -or [version]$nuget.Version -lt [version]'2.8.5.201') {
+            Write-Output "Bootstrapping NuGet provider..."
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser
+            Write-Output "NuGet provider ready"
+        }
+    } catch {
+        Write-Output "WARNING: NuGet bootstrap - $($_.Exception.Message)"
+    }
+}
+
+# Ensure PowerShellGet is loaded
+Import-Module PowerShellGet -ErrorAction SilentlyContinue
+
+# Trust PSGallery (register if missing — can happen on fresh Linux installs)
 try {
+    if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+        Write-Output "Registering PSGallery..."
+        Register-PSRepository -Default -ErrorAction SilentlyContinue
+    }
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
 } catch {}
 `
@@ -121,11 +135,12 @@ Write-Output "DONE"
 async function updateModules(moduleNames, onData, onError) {
   const script = `
 ${PS_SILENT_PREFS}
+${BOOTSTRAP}
 $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "UPDATING: $mod"
     try {
-        Update-Module -Name $mod -Force -ErrorAction Stop
+        Update-Module -Name $mod -Force -AcceptLicense -ErrorAction Stop
         Write-Output "SUCCESS: $mod updated"
     } catch {
         Write-Output "ERROR: $mod - $($_.Exception.Message)"

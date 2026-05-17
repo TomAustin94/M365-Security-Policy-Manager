@@ -25,14 +25,13 @@ function resultBadge(status) {
 // ── Auth mode selector banner ─────────────────────────────────────────────────
 function AuthModeBanner({ mode, onChange, locked }) {
   const modes = [
-    { id: 'itglue',      label: 'IT Glue',      icon: '🔗', desc: 'Pull credentials automatically from IT Glue' },
-    { id: 'manual',      label: 'Manual',        icon: '✏️',  desc: 'Enter tenant name and password manually' },
-    { id: 'interactive', label: 'Interactive',   icon: '🌐', desc: 'Sign in via browser or device code (WAM/MFA-safe)' },
+    { id: 'itglue',      label: 'IT Glue',  icon: '🔗', desc: 'Resolve credentials from IT Glue and authenticate via WAM' },
+    { id: 'interactive', label: 'WAM / Browser', icon: '🌐', desc: 'Sign in interactively via browser or device code' },
   ]
   return (
     <div className="mb-6">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Authentication method</p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {modes.map((m) => (
           <button
             key={m.id}
@@ -65,7 +64,6 @@ function AuthModeBanner({ mode, onChange, locked }) {
 // ── Step 1: Org & Credentials (content varies by auth mode) ──────────────────
 function StepOrgAndCredentials({ authMode, org, setOrg, credentials, setCredentials }) {
   if (authMode === 'itglue') return <StepItGlue org={org} setOrg={setOrg} credentials={credentials} setCredentials={setCredentials} />
-  if (authMode === 'manual') return <StepManual org={org} setOrg={setOrg} credentials={credentials} setCredentials={setCredentials} />
   if (authMode === 'interactive') return <StepInteractive org={org} setOrg={setOrg} setCredentials={setCredentials} />
   return null
 }
@@ -158,67 +156,6 @@ function StepItGlue({ org, setOrg, credentials, setCredentials }) {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function StepManual({ org, setOrg, credentials, setCredentials }) {
-  const handleOrgName = (name) => setOrg({ id: 'manual', name, shortName: '' })
-  const handleCred = (field, val) => {
-    const updated = { ...(credentials || { username: '', password: '', tenantId: '' }), [field]: val }
-    setCredentials(updated)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Organisation / Tenant name</label>
-        <input
-          type="text"
-          value={org?.name || ''}
-          onChange={(e) => handleOrgName(e.target.value)}
-          placeholder="e.g. Acme Corp"
-          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-        />
-        <p className="mt-1 text-xs text-gray-400">Used for the policy prefix — does not need to match anything in Azure AD.</p>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Tenant ID <span className="font-normal text-gray-400">(optional)</span></label>
-        <input
-          type="text"
-          value={credentials?.tenantId || ''}
-          onChange={(e) => handleCred('tenantId', e.target.value)}
-          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy font-mono"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Username / UPN</label>
-        <input
-          type="text"
-          value={credentials?.username || ''}
-          onChange={(e) => handleCred('username', e.target.value)}
-          placeholder="admin@contoso.onmicrosoft.com"
-          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-        <input
-          type="password"
-          value={credentials?.password || ''}
-          onChange={(e) => handleCred('password', e.target.value)}
-          placeholder="Enter password..."
-          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-        />
-      </div>
-
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
-        Credentials are held in memory only for the duration of the deployment and are never written to disk or logs.
-      </div>
     </div>
   )
 }
@@ -407,7 +344,7 @@ function StepReview({ authMode, org, credentials, prefix, usePrefix, selectedIds
     return acc
   }, {})
 
-  const authLabel = { itglue: 'IT Glue', manual: 'Manual', interactive: 'Interactive (WAM)' }[authMode]
+  const authLabel = { itglue: 'IT Glue → WAM', interactive: 'WAM / Browser' }[authMode]
 
   return (
     <div className="space-y-5">
@@ -527,7 +464,6 @@ export default function CreatePolicies() {
     if (step === 1) {
       if (!org?.name) return false
       if (authMode === 'interactive') return true
-      if (authMode === 'manual') return !!(credentials?.username && credentials?.password)
       if (authMode === 'itglue') return !!(credentials?.username && credentials?.password)
       return false
     }

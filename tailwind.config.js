@@ -34,8 +34,8 @@ module.exports = {
         surface: '#F8F9FC',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        sans: ['Inter', 'Segoe UI', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['Cascadia Code', 'Consolas', 'Fira Code', 'monospace'],
       },
     },
   },

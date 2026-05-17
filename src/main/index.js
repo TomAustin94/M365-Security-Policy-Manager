@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session } = require('electron')
+const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const { registerIpcHandlers } = require('./ipcHandlers')
 
@@ -19,18 +19,6 @@ function createWindow() {
       sandbox: false,
       webSecurity: true,
     },
-  })
-
-  // CSP header
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;"
-        ],
-      },
-    })
   })
 
   if (isDev) {

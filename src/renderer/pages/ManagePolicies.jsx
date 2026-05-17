@@ -6,6 +6,7 @@ import Badge from '../components/Badge'
 import Modal from '../components/Modal'
 import SlideOver from '../components/SlideOver'
 import SearchInput from '../components/SearchInput'
+import LogPanel from '../components/LogPanel'
 
 function stateBadge(state) {
   if (!state) return <Badge variant="neutral">Unknown</Badge>
@@ -187,6 +188,14 @@ export default function ManagePolicies() {
   const [editTarget, setEditTarget] = useState(null)
   const [editJson, setEditJson] = useState('')
   const [saveLoading, setSaveLoading] = useState(false)
+  const [authLogs, setAuthLogs] = useState([])
+
+  useEffect(() => {
+    if (!window.api) return
+    const unOut = window.api.onPsOutput((line) => setAuthLogs((l) => [...l, { line, type: 'output' }]))
+    const unErr = window.api.onPsError((line) => setAuthLogs((l) => [...l, { line, type: 'error' }]))
+    return () => { unOut?.(); unErr?.() }
+  }, [])
 
   const handleAuthModeChange = (mode) => {
     setAuthMode(mode)
@@ -200,6 +209,7 @@ export default function ManagePolicies() {
   const handleLoad = async () => {
     if (!window.api || !canLoad) return
     setLoading(true)
+    setAuthLogs([])
     try {
       const creds = authMode === 'interactive' ? { interactive: true } : credentials
       const result = await window.api.policies.list(creds, authMode)
@@ -322,6 +332,19 @@ export default function ManagePolicies() {
               {connected ? 'Reload Policies' : 'Load Policies'}
             </Button>
           </div>
+          {loading && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <p className="font-medium mb-1">Authenticating…</p>
+              <p className="text-xs text-blue-600">
+                {authMode === 'interactive'
+                  ? 'A browser sign-in window should open. If you see a device code below, go to microsoft.com/devicelogin and enter it.'
+                  : 'A browser window will open pre-filled with the selected account. Complete sign-in to continue.'}
+              </p>
+            </div>
+          )}
+          {authLogs.length > 0 && (
+            <LogPanel logs={authLogs} height="h-28" title="Connection Output" />
+          )}
         </Card.Body>
       </Card>
 

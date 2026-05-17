@@ -106,25 +106,39 @@ function registerIpcHandlers(win) {
 
   // Policies
   ipcMain.handle('policies:list', async (_, credentials, authMode) => {
-    const connectLine = (authMode === 'interactive' || credentials?.interactive)
-      ? `Connect-MgGraph -Scopes "Policy.Read.All" -NoWelcome`
-      : `Connect-MgGraph ${credentials.tenantId ? `-TenantId '${credentials.tenantId}'` : ''} -Credential (New-Object System.Management.Automation.PSCredential('${credentials.username}', (ConvertTo-SecureString '${credentials.password}' -AsPlainText -Force))) -NoWelcome`
+    // Connect-MgGraph does not support -Credential; use -LoginHint to pre-fill
+    // the browser/device-code sign-in with the IT Glue username when available
+    const loginHint = (authMode !== 'interactive' && credentials?.username)
+      ? `-LoginHint '${credentials.username}'`
+      : ''
 
     const script = `
 $ProgressPreference = 'SilentlyContinue'
 try {
-  ${connectLine}
+  Write-Output "Connecting to Microsoft Graph..."
+  Connect-MgGraph -Scopes "Policy.Read.All" -NoWelcome ${loginHint}
+  Write-Output "Connected. Fetching policies..."
   $policies = Get-MgIdentityConditionalAccessPolicy
+  Write-Output "POLICY_JSON_START"
   $policies | Select-Object Id, DisplayName, State, CreatedDateTime, ModifiedDateTime | ConvertTo-Json -Depth 3
+  Write-Output "POLICY_JSON_END"
   Disconnect-MgGraph | Out-Null
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
 }
 `
-    const { output } = await runScript(script, null, null)
+    const lines = []
+    const { output } = await runScript(
+      script,
+      (line) => { lines.push(line); win.webContents.send('ps:output', line) },
+      (line) => win.webContents.send('ps:error', line)
+    )
     try {
-      const match = output.match(/\[[\s\S]*\]|\{[\s\S]*\}/)
-      if (match) return JSON.parse(match[0])
+      const jsonBlock = output.match(/POLICY_JSON_START\r?\n([\s\S]*?)\r?\nPOLICY_JSON_END/)
+      if (jsonBlock) {
+        const parsed = JSON.parse(jsonBlock[1])
+        return Array.isArray(parsed) ? parsed : [parsed]
+      }
     } catch {}
     return []
   })

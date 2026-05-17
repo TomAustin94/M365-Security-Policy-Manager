@@ -255,8 +255,164 @@ function StepConfigurePrefix({ usePrefix, setUsePrefix, prefix, setPrefix, defau
 }
 
 // ── Step 3: Select Policies ───────────────────────────────────────────────────
+const PRESETS = [
+  {
+    id: 'recommended',
+    name: 'Recommended Baseline',
+    subtitle: 'Best starting point for most tenants',
+    color: 'border-navy bg-navy-50',
+    badge: 'bg-navy text-white',
+    getIds: () => POLICIES.filter((p) => p.defaultEnabled).map((p) => p.id),
+  },
+  {
+    id: 'identity',
+    name: 'Identity & Access',
+    subtitle: 'Conditional Access · Identity Protection · Admin Security · Tenant Baseline',
+    color: 'border-purple-300 bg-purple-50',
+    badge: 'bg-purple-600 text-white',
+    getIds: () => POLICIES.filter((p) => ['Conditional Access', 'Identity Protection', 'Admin Security', 'Tenant Baseline'].includes(p.category)).map((p) => p.id),
+  },
+  {
+    id: 'email',
+    name: 'Email & Collaboration',
+    subtitle: 'Exchange Online · SharePoint & OneDrive · Teams',
+    color: 'border-blue-300 bg-blue-50',
+    badge: 'bg-blue-600 text-white',
+    getIds: () => POLICIES.filter((p) => ['Exchange Online', 'SharePoint & OneDrive', 'Teams'].includes(p.category)).map((p) => p.id),
+  },
+  {
+    id: 'endpoint',
+    name: 'Endpoint & Defender',
+    subtitle: 'Intune device compliance · Defender for Endpoint',
+    color: 'border-green-300 bg-green-50',
+    badge: 'bg-green-600 text-white',
+    getIds: () => POLICIES.filter((p) => ['Intune / Endpoint', 'Defender'].includes(p.category)).map((p) => p.id),
+  },
+  {
+    id: 'compliance',
+    name: 'Audit & Compliance',
+    subtitle: 'Audit logs · DLP · Sensitivity labels · Retention',
+    color: 'border-amber-300 bg-amber-50',
+    badge: 'bg-amber-600 text-white',
+    getIds: () => POLICIES.filter((p) => p.category === 'Audit & Compliance').map((p) => p.id),
+  },
+  {
+    id: 'full',
+    name: 'Full Suite',
+    subtitle: 'All policies — maximum coverage',
+    color: 'border-gray-400 bg-gray-50',
+    badge: 'bg-gray-700 text-white',
+    getIds: () => POLICIES.map((p) => p.id),
+  },
+]
+
+function PresetPicker({ onSelect }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">Choose a starting point — you can fine-tune individual policies in the next step.</p>
+      <div className="grid grid-cols-2 gap-3">
+        {PRESETS.map((preset) => {
+          const count = preset.getIds().length
+          return (
+            <button
+              key={preset.id}
+              onClick={() => onSelect(preset)}
+              className={`text-left rounded-xl border-2 px-4 py-4 hover:shadow-sm transition-all ${preset.color}`}
+            >
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <span className="text-sm font-semibold text-gray-900">{preset.name}</span>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${preset.badge}`}>{count}</span>
+              </div>
+              <p className="text-xs text-gray-500 leading-snug">{preset.subtitle}</p>
+            </button>
+          )
+        })}
+      </div>
+      <button
+        onClick={() => onSelect(null)}
+        className="w-full text-left rounded-xl border-2 border-dashed border-gray-300 px-4 py-3 hover:border-gray-400 hover:bg-gray-50 transition-all"
+      >
+        <span className="text-sm font-medium text-gray-600">Custom — start with nothing and pick manually</span>
+      </button>
+    </div>
+  )
+}
+
+function CategoryRow({ category, policies, selected, onToggleAll, onTogglePolicy }) {
+  const [open, setOpen] = useState(false)
+  const catIds = policies.map((p) => p.id)
+  const selCount = catIds.filter((id) => selected.includes(id)).length
+  const allSel = selCount === catIds.length
+  const someSel = selCount > 0 && !allSel
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <input
+          type="checkbox"
+          checked={allSel}
+          ref={(el) => { if (el) el.indeterminate = someSel }}
+          onChange={() => onToggleAll(catIds, allSel)}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4 rounded border-gray-300 text-navy flex-shrink-0"
+        />
+        <span className="text-sm font-semibold text-gray-700 flex-1">{category}</span>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${selCount > 0 ? 'bg-navy text-white' : 'bg-gray-200 text-gray-600'}`}>
+          {selCount}/{catIds.length}
+        </span>
+        <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+      {open && (
+        <div className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
+          {policies.map((p) => (
+            <label key={p.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.includes(p.id)}
+                onChange={() => onTogglePolicy(p.id)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-navy flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-gray-400 flex-shrink-0">{p.id}</span>
+                  <span className="text-sm text-gray-800 truncate">{p.name}</span>
+                  {severityBadge(p.severity)}
+                </div>
+                {p.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{p.description}</p>}
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StepSelectPolicies({ selected, setSelected }) {
+  const [preset, setPreset] = useState(null) // null = not chosen yet
   const [search, setSearch] = useState('')
+
+  function handlePresetSelect(p) {
+    if (p === null) {
+      setSelected([])
+    } else {
+      setSelected(p.getIds())
+    }
+    setPreset(p ?? { id: 'custom', name: 'Custom' })
+  }
+
+  function togglePolicy(id) {
+    setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
+  }
+
+  function toggleAll(catIds, allSel) {
+    setSelected((s) => allSel ? s.filter((id) => !catIds.includes(id)) : [...new Set([...s, ...catIds])])
+  }
 
   const filteredCategories = Object.keys(POLICIES_BY_CATEGORY).reduce((acc, cat) => {
     const policies = POLICIES_BY_CATEGORY[cat].filter((p) =>
@@ -266,71 +422,45 @@ function StepSelectPolicies({ selected, setSelected }) {
     return acc
   }, {})
 
-  const togglePolicy = (id) => setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
-
-  const toggleCategory = (cat) => {
-    const catIds = (filteredCategories[cat] || []).map((p) => p.id)
-    const allSelected = catIds.every((id) => selected.includes(id))
-    setSelected((s) => allSelected ? s.filter((id) => !catIds.includes(id)) : [...new Set([...s, ...catIds])])
+  if (!preset) {
+    return <PresetPicker onSelect={handlePresetSelect} />
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search policies..." className="w-64" />
-        <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setSelected(POLICIES.filter((p) => p.defaultEnabled).map((p) => p.id))}>Defaults</Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(POLICIES.map((p) => p.id))}>All</Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelected([])}>None</Button>
-          <Badge variant="neutral">{selected.length} selected</Badge>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search policies..."
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm w-52 focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          />
+          <span className="text-sm text-gray-500">{selected.length} selected</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setPreset(null)} className="text-xs text-navy hover:underline">
+            Change preset
+          </button>
+          <span className="text-gray-300">|</span>
+          <button onClick={() => setSelected(POLICIES.filter((p) => p.defaultEnabled).map((p) => p.id))} className="text-xs text-gray-500 hover:text-gray-700 hover:underline">Defaults</button>
+          <button onClick={() => setSelected(POLICIES.map((p) => p.id))} className="text-xs text-gray-500 hover:text-gray-700 hover:underline">All</button>
+          <button onClick={() => setSelected([])} className="text-xs text-gray-500 hover:text-gray-700 hover:underline">None</button>
         </div>
       </div>
 
-      <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
-        {Object.entries(filteredCategories).map(([cat, policies]) => {
-          const catIds = policies.map((p) => p.id)
-          const allSel = catIds.every((id) => selected.includes(id))
-          const someSel = catIds.some((id) => selected.includes(id))
-          return (
-            <div key={cat} className="border border-gray-200 rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 cursor-pointer" onClick={() => toggleCategory(cat)}>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={allSel}
-                    ref={(el) => { if (el) el.indeterminate = someSel && !allSel }}
-                    onChange={() => toggleCategory(cat)}
-                    className="h-4 w-4 rounded border-gray-300 text-navy"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <span className="text-sm font-semibold text-gray-700">{cat}</span>
-                  <Badge variant="neutral">{policies.length}</Badge>
-                </div>
-                <span className="text-xs text-gray-400">{catIds.filter((id) => selected.includes(id)).length} selected</span>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {policies.map((p) => (
-                  <label key={p.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(p.id)}
-                      onChange={() => togglePolicy(p.id)}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-navy flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-gray-400">{p.id}</span>
-                        <span className="text-sm text-gray-800">{p.name}</span>
-                        {severityBadge(p.severity)}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">{p.description}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )
-        })}
+      <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
+        {Object.entries(filteredCategories).map(([cat, policies]) => (
+          <CategoryRow
+            key={cat}
+            category={cat}
+            policies={policies}
+            selected={selected}
+            onToggleAll={toggleAll}
+            onTogglePolicy={togglePolicy}
+          />
+        ))}
       </div>
     </div>
   )

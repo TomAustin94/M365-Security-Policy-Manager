@@ -608,7 +608,7 @@ export default function CreatePolicies() {
   const [usePrefix, setUsePrefix] = useState(!!settings.defaultPolicyPrefix)
   const [prefix, setPrefix] = useState(settings.defaultPolicyPrefix || '')
   const [selectedIds, setSelectedIds] = useState(
-    baselinePolicyIds ?? POLICIES.filter((p) => p.defaultEnabled).map((p) => p.id)
+    baselinePolicyIds ?? []
   )
   const [policyConfigs, setPolicyConfigs] = useState({})
   const [deployLogs, setDeployLogs] = useState([])

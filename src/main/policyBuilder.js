@@ -881,4 +881,4 @@ function buildScript(policies, credentials, prefix, authMode = 'interactive', po
   return parts.join('\n')
 }
 
-module.exports = { buildScript }
+module.exports = { buildScript, buildConnectGraph }

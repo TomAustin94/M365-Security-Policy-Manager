@@ -79,6 +79,12 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  // Report
+  report: {
+    audit: (options) => ipcRenderer.invoke('report:audit', options),
+    savePDF: (orgName) => ipcRenderer.invoke('app:savePDF', orgName),
+  },
+
   // PS event listeners
   onPsOutput: (cb) => {
     const handler = (_, data) => cb(data)

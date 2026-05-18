@@ -2,7 +2,7 @@ const { ipcMain, app, shell } = require('electron')
 const { checkPowerShell, runScript } = require('./powershell')
 const { getModuleStatus, installModules, updateModules } = require('./moduleManager')
 const itGlue = require('./itGlue')
-const { buildScript } = require('./policyBuilder')
+const { buildScript, buildConnectGraph } = require('./policyBuilder')
 const store = require('./store')
 const path = require('path')
 const { execFile } = require('child_process')
@@ -203,6 +203,84 @@ Write-Output "SUCCESS"
     const script = `${MG_IMPORT}\nUpdate-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId '${id}' -State '${state}'\nWrite-Output "SUCCESS"`
     const { exitCode } = await runScript(script, null, null)
     return { success: exitCode === 0 }
+  })
+
+  // Report: audit CA policies
+  ipcMain.handle('report:audit', async (_, options) => {
+    const { credentials, authMode } = options || {}
+    const connectBlock = buildConnectGraph(credentials, authMode)
+
+    const script = `
+$ProgressPreference = 'SilentlyContinue'
+$VerbosePreference = 'SilentlyContinue'
+Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
+Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
+Write-Output "CONNECTING: Authenticating..."
+${connectBlock}
+Write-Output "CONNECTED: Reading Conditional Access policies..."
+try {
+  $policies = Get-MgIdentityConditionalAccessPolicy -All | ForEach-Object {
+    [PSCustomObject]@{ Id=$_.Id; DisplayName=$_.DisplayName; State=$_.State }
+  }
+  $count = @($policies).Count
+  Write-Output "DATA:$(($policies | ConvertTo-Json -Compress -Depth 3))"
+  Write-Output "DONE: $count policies found"
+} catch {
+  Write-Output "ERROR: $($_.Exception.Message)"
+} finally {
+  try { Disconnect-MgGraph -ErrorAction SilentlyContinue } catch {}
+}
+`
+    const lines = []
+    await runScript(
+      script,
+      (line) => {
+        lines.push(line)
+        win.webContents.send('ps:output', line)
+      },
+      (line) => {
+        win.webContents.send('ps:error', line)
+      }
+    )
+
+    // Parse DATA: line
+    const dataLine = lines.find(l => l.startsWith('DATA:'))
+    if (dataLine) {
+      try {
+        const json = dataLine.slice('DATA:'.length).trim()
+        const parsed = JSON.parse(json)
+        return { policies: Array.isArray(parsed) ? parsed : [parsed] }
+      } catch (err) {
+        return { error: 'Failed to parse policy data: ' + err.message }
+      }
+    }
+
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
+    if (errorLine) return { error: errorLine.slice('ERROR:'.length).trim() }
+    return { error: 'No data returned from PowerShell' }
+  })
+
+  // App: save PDF
+  ipcMain.handle('app:savePDF', async (_, orgName) => {
+    const sanitisedFilename = (orgName || 'report')
+      .replace(/[^a-zA-Z0-9\s\-_]/g, '')
+      .replace(/\s+/g, '_')
+      .slice(0, 80)
+    const timestamp = new Date().toISOString().slice(0, 10)
+    const filename = `SecurityReport_${sanitisedFilename}_${timestamp}.pdf`
+    const savedPath = path.join(app.getPath('documents'), filename)
+
+    try {
+      const buffer = await win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: 'A4',
+        margins: { marginType: 'minimum' },
+      })
+      fs.writeFileSync(savedPath, buffer)
+      return { path: savedPath }
+    } catch (err) {
+      return { error: err.message }
+    }
   })
 
 }

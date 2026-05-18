@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu } = require('electron')
 const path = require('path')
 const { registerIpcHandlers } = require('./ipcHandlers')
+const { setupAutoUpdater } = require('./autoUpdater')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -32,6 +33,7 @@ function createWindow() {
   }
 
   registerIpcHandlers(win)
+  setupAutoUpdater(win, isDev)
 }
 
 app.whenReady().then(() => {

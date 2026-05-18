@@ -106,15 +106,43 @@ const useStore = create((set, get) => ({
     set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) })),
 
   // ── Updater ───────────────────────────────────────────────────────────────
-  updateInfo: null,
-  setUpdateInfo: (updateInfo) => set({ updateInfo }),
-  checkUpdate: async () => {
-    if (!window.api?.app) return
-    try {
-      const info = await window.api.app.checkUpdate()
-      set({ updateInfo: info })
-    } catch {}
+  // status: idle | checking | available | downloading | downloaded | error
+  updaterStatus: 'idle',
+  updaterInfo: null,      // { version, releaseDate, releaseNotes }
+  downloadProgress: null, // { percent, transferred, total, bytesPerSecond }
+  updaterError: null,
+  updateInfo: null,       // kept for sidebar banner compat
+
+  initUpdaterListeners: () => {
+    if (!window.api?.updater) return
+    window.api.updater.onChecking(() => set({ updaterStatus: 'checking' }))
+    window.api.updater.onAvailable((info) =>
+      set({ updaterStatus: 'available', updaterInfo: info, updateInfo: { hasUpdate: true, latestVersion: info.version } })
+    )
+    window.api.updater.onNotAvailable(() => set({ updaterStatus: 'idle' }))
+    window.api.updater.onProgress((p) =>
+      set({ updaterStatus: 'downloading', downloadProgress: p })
+    )
+    window.api.updater.onDownloaded((info) =>
+      set({ updaterStatus: 'downloaded', updaterInfo: info })
+    )
+    window.api.updater.onError((msg) =>
+      set({ updaterStatus: 'error', updaterError: msg })
+    )
   },
+
+  triggerCheck: () => window.api?.updater?.check(),
+  showUpdater: () => {
+    const { updaterStatus, updaterInfo } = get()
+    if (updaterStatus === 'idle' && updaterInfo) set({ updaterStatus: 'available' })
+    else window.api?.updater?.check()
+  },
+  triggerDownload: () => {
+    set({ updaterStatus: 'downloading', downloadProgress: null })
+    window.api?.updater?.download()
+  },
+  triggerInstall: () => window.api?.updater?.install(),
+  dismissUpdater: () => set({ updaterStatus: 'idle', updaterError: null }),
 
   // ── First Run ─────────────────────────────────────────────────────────────
   firstRun: false,

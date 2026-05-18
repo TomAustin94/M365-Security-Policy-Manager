@@ -36,11 +36,47 @@ contextBridge.exposeInMainWorld('api', {
     toggleState: (id, state) => ipcRenderer.invoke('policies:toggleState', id, state),
   },
 
-  // App / updater
+  // App
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
-    checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
     openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  },
+
+  // Auto-updater
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onChecking: (cb) => {
+      const h = () => cb()
+      ipcRenderer.on('updater:checking', h)
+      return () => ipcRenderer.removeListener('updater:checking', h)
+    },
+    onAvailable: (cb) => {
+      const h = (_, info) => cb(info)
+      ipcRenderer.on('updater:available', h)
+      return () => ipcRenderer.removeListener('updater:available', h)
+    },
+    onNotAvailable: (cb) => {
+      const h = () => cb()
+      ipcRenderer.on('updater:not-available', h)
+      return () => ipcRenderer.removeListener('updater:not-available', h)
+    },
+    onProgress: (cb) => {
+      const h = (_, p) => cb(p)
+      ipcRenderer.on('updater:progress', h)
+      return () => ipcRenderer.removeListener('updater:progress', h)
+    },
+    onDownloaded: (cb) => {
+      const h = (_, info) => cb(info)
+      ipcRenderer.on('updater:downloaded', h)
+      return () => ipcRenderer.removeListener('updater:downloaded', h)
+    },
+    onError: (cb) => {
+      const h = (_, msg) => cb(msg)
+      ipcRenderer.on('updater:error', h)
+      return () => ipcRenderer.removeListener('updater:error', h)
+    },
   },
 
   // PS event listeners

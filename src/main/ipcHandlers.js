@@ -3,7 +3,6 @@ const { checkPowerShell, runScript } = require('./powershell')
 const { getModuleStatus, installModules, updateModules } = require('./moduleManager')
 const itGlue = require('./itGlue')
 const { buildScript } = require('./policyBuilder')
-const { checkForUpdate } = require('./updater')
 const store = require('./store')
 const path = require('path')
 const { execFile } = require('child_process')
@@ -15,9 +14,8 @@ function registerIpcHandlers(win) {
   ipcMain.handle('store:set', (_, key, value) => store.set(key, value))
   ipcMain.handle('store:delete', (_, key) => store.delete(key))
 
-  // App info & updater
+  // App
   ipcMain.handle('app:getVersion', () => app.getVersion())
-  ipcMain.handle('app:checkUpdate', async () => checkForUpdate(app.getVersion()))
   ipcMain.handle('app:openExternal', (_, url) => shell.openExternal(url))
 
   // PowerShell check

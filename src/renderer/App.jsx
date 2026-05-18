@@ -11,7 +11,7 @@ import ManagePolicies from './pages/ManagePolicies'
 import Modules from './pages/Modules'
 import Settings from './pages/Settings'
 
-const VERSION = '1.0.0'
+const VERSION = '1.1.0'
 
 function NavItem({ to, icon, label }) {
   return (
@@ -33,6 +33,7 @@ function NavItem({ to, icon, label }) {
 }
 
 function Sidebar({ modules, psStatus }) {
+  const { updateInfo } = useStore()
   const installed = modules.filter((m) => m.Status === 'up_to_date').length
   const total = modules.length
   const healthStatus = !psStatus?.found
@@ -110,6 +111,21 @@ function Sidebar({ modules, psStatus }) {
 
       {/* Footer */}
       <div className="px-4 py-4 border-t border-white/10 space-y-3">
+        {/* Update banner */}
+        {updateInfo?.hasUpdate && (
+          <button
+            onClick={() => window.api?.app?.openExternal(updateInfo.releaseUrl)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gold/20 border border-gold/40 hover:bg-gold/30 transition-colors text-left"
+          >
+            <svg className="w-3.5 h-3.5 text-gold flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-gold leading-tight">Update available</p>
+              <p className="text-xs text-gold/70 leading-tight">v{updateInfo.latestVersion}</p>
+            </div>
+          </button>
+        )}
         <div className="flex items-center gap-2 px-1">
           <StatusIndicator status={healthStatus} showLabel={false} />
           <span className="text-xs text-white/60">
@@ -206,12 +222,14 @@ function FirstRunModal() {
 }
 
 export default function App() {
-  const { modules, psStatus, loadModules, loadSettings, checkFirstRun, appendLog } = useStore()
+  const { modules, psStatus, loadModules, loadSettings, checkFirstRun, checkUpdate, appendLog } = useStore()
 
   useEffect(() => {
     loadSettings()
     loadModules()
     checkFirstRun()
+    // Check for updates in the background — non-blocking
+    setTimeout(() => checkUpdate(), 3000)
 
     if (window.api) {
       const unsubOut = window.api.onPsOutput((line) => appendLog(line, 'output'))

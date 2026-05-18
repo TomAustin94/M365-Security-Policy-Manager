@@ -36,6 +36,13 @@ contextBridge.exposeInMainWorld('api', {
     toggleState: (id, state) => ipcRenderer.invoke('policies:toggleState', id, state),
   },
 
+  // App / updater
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
+    openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  },
+
   // PS event listeners
   onPsOutput: (cb) => {
     const handler = (_, data) => cb(data)

@@ -1,8 +1,9 @@
-const { ipcMain, app } = require('electron')
+const { ipcMain, app, shell } = require('electron')
 const { checkPowerShell, runScript } = require('./powershell')
 const { getModuleStatus, installModules, updateModules } = require('./moduleManager')
 const itGlue = require('./itGlue')
 const { buildScript } = require('./policyBuilder')
+const { checkForUpdate } = require('./updater')
 const store = require('./store')
 const path = require('path')
 const { execFile } = require('child_process')
@@ -13,6 +14,11 @@ function registerIpcHandlers(win) {
   ipcMain.handle('store:get', (_, key) => store.get(key))
   ipcMain.handle('store:set', (_, key, value) => store.set(key, value))
   ipcMain.handle('store:delete', (_, key) => store.delete(key))
+
+  // App info & updater
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+  ipcMain.handle('app:checkUpdate', async () => checkForUpdate(app.getVersion()))
+  ipcMain.handle('app:openExternal', (_, url) => shell.openExternal(url))
 
   // PowerShell check
   ipcMain.handle('modules:checkPs', async () => checkPowerShell())
@@ -101,8 +107,8 @@ function registerIpcHandlers(win) {
 
   // IT Glue
   ipcMain.handle('itglue:test', async (_, apiKey) => itGlue.testConnection(apiKey))
-  ipcMain.handle('itglue:getOrgs', async () => itGlue.getOrganizations())
-  ipcMain.handle('itglue:getPasswords', async (_, orgId) => itGlue.getPasswords(orgId))
+  ipcMain.handle('itglue:getOrgs', async () => { try { return await itGlue.getOrganizations() } catch { return [] } })
+  ipcMain.handle('itglue:getPasswords', async (_, orgId) => { try { return await itGlue.getPasswords(orgId) } catch { return [] } })
 
   // Policies
   ipcMain.handle('policies:list', async (_, credentials, authMode) => {

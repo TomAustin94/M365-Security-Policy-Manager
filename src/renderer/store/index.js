@@ -105,6 +105,17 @@ const useStore = create((set, get) => ({
   removeNotification: (id) =>
     set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) })),
 
+  // ── Updater ───────────────────────────────────────────────────────────────
+  updateInfo: null,
+  setUpdateInfo: (updateInfo) => set({ updateInfo }),
+  checkUpdate: async () => {
+    if (!window.api?.app) return
+    try {
+      const info = await window.api.app.checkUpdate()
+      set({ updateInfo: info })
+    } catch {}
+  },
+
   // ── First Run ─────────────────────────────────────────────────────────────
   firstRun: false,
   setFirstRun: (firstRun) => set({ firstRun }),

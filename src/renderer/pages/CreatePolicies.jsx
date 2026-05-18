@@ -175,7 +175,7 @@ function StepInteractive({ org, setOrg, setCredentials }) {
           type="text"
           value={org?.name || ''}
           onChange={(e) => setOrg({ id: 'manual', name: e.target.value, shortName: '' })}
-          placeholder="e.g. Acme Corp"
+          placeholder="e.g. AffinityIT"
           className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
         />
       </div>
@@ -235,7 +235,7 @@ function StepConfigurePrefix({ usePrefix, setUsePrefix, prefix, setPrefix, defau
             type="text"
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
-            placeholder={effectiveDefault || 'e.g. Acme Corp'}
+            placeholder={effectiveDefault || 'e.g. AffinityIT'}
             className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
           />
           {effectiveDefault && !prefix && (

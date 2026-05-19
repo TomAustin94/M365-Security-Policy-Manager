@@ -124,15 +124,9 @@ function registerIpcHandlers(win) {
 
     const connectBlock = authMode === 'interactive'
       ? `
-Write-Output "Authenticating with Microsoft Graph..."
-try {
-  Connect-MgGraph -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome -Silent -ErrorAction Stop
-  Write-Output "Connected (session resumed)."
-} catch {
-  Write-Output "No cached session - follow the device code prompt below..."
-  Connect-MgGraph -UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome -ErrorAction Stop
-  Write-Output "Connected."
-}`
+Write-Output "Follow the device code prompt below..."
+Connect-MgGraph -UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome -ErrorAction Stop
+Write-Output "Connected."`
       : `
 Write-Output "Connecting to Microsoft Graph..."
 Connect-MgGraph -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}
@@ -211,9 +205,9 @@ $ProgressPreference = 'SilentlyContinue'
 Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
-  Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -Silent -ErrorAction Stop
+  Connect-MgGraph -UseDeviceAuthentication -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -ErrorAction Stop
 } catch {
-  Write-Output "ERROR: Session expired - please reload policies to reconnect."
+  Write-Output "ERROR: Could not connect to Microsoft Graph - $($_.Exception.Message)"
   exit 1
 }`
 

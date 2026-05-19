@@ -54,18 +54,12 @@ function buildConnectGraph(credentials, authMode, opts = {}) {
   const scopes = '"Policy.ReadWrite.ConditionalAccess Policy.Read.All DeviceManagementConfiguration.ReadWrite.All Organization.ReadWrite.All Directory.ReadWrite.All RoleManagement.ReadWrite.Directory AuditLog.Read.All"'
   if (authMode === 'interactive') {
     const tid = credentials?.tenantId ? `-TenantId '${safe(credentials.tenantId)}'` : ''
-    return `Write-Output "CONNECTING: Authenticating with Microsoft Graph..."
+    return `Write-Output "CONNECTING: Follow the device code prompt below..."
 try {
-    Connect-MgGraph ${tid} -Scopes ${scopes} -NoWelcome -Silent -ErrorAction Stop
-    Write-Output "CONNECTED: Microsoft Graph (session resumed)"
+    Connect-MgGraph ${tid} -UseDeviceAuthentication -Scopes ${scopes} -NoWelcome -ErrorAction Stop
+    Write-Output "CONNECTED: Microsoft Graph"
 } catch {
-    Write-Output "CONNECTING: No cached session - follow the device code prompt below..."
-    try {
-        Connect-MgGraph ${tid} -UseDeviceAuthentication -Scopes ${scopes} -NoWelcome -ErrorAction Stop
-        Write-Output "CONNECTED: Microsoft Graph"
-    } catch {
-        Write-Output "ERROR: Graph connect failed - $($_.Exception.Message)"; exit 1
-    }
+    Write-Output "ERROR: Graph connect failed - $($_.Exception.Message)"; exit 1
 }`
   }
   return `

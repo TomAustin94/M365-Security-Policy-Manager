@@ -123,7 +123,9 @@ function registerIpcHandlers(win) {
       : ''
     // Always use device code flow — WAM (the Windows broker fallback) requires a
     // parent window handle that is unavailable in a console-less subprocess.
-    const connectArgs = `-UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}`
+    // -ContextScope CurrentUser persists the MSAL token to disk so subsequent
+    // processes can reuse it silently (avoids "Session expired" on toggle/edit).
+    const connectArgs = `-UseDeviceAuthentication -ContextScope CurrentUser -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}`
 
     const script = `
 $ProgressPreference = 'SilentlyContinue'
@@ -211,7 +213,7 @@ try {
 Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
-  Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -Silent ${tidFlag} -ErrorAction Stop
+  Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -ContextScope CurrentUser -NoWelcome -Silent ${tidFlag} -ErrorAction Stop
 } catch {
   $errMsg = $_.Exception.Message
   if ($errMsg -match 'listener|window handle') {

@@ -115,7 +115,7 @@ $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "INSTALLING: $mod (large modules like Microsoft.Graph may take 5-15 minutes)..."
     try {
-        Install-Module -Name $mod -Scope CurrentUser -Force -AllowClobber -AcceptLicense -SkipPublisherCheck -Confirm:$false -Repository PSGallery -ErrorAction Stop
+        Install-Module -Name $mod -Scope CurrentUser -Force -AllowClobber -SkipPublisherCheck -Confirm:$false -Repository PSGallery -ErrorAction Stop
         Write-Output "SUCCESS: $mod installed"
     } catch {
         Write-Output "ERROR: $mod - $($_.Exception.Message)"
@@ -136,7 +136,7 @@ $modules = @(${moduleNames.map(n => `'${n}'`).join(',')})
 foreach ($mod in $modules) {
     Write-Output "UPDATING: $mod (large modules may take 5-15 minutes)..."
     try {
-        Update-Module -Name $mod -Force -AcceptLicense -Confirm:$false -ErrorAction Stop
+        Update-Module -Name $mod -Force -Confirm:$false -ErrorAction Stop
         Write-Output "SUCCESS: $mod updated"
     } catch {
         Write-Output "ERROR: $mod - $($_.Exception.Message)"

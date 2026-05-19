@@ -126,11 +126,11 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
   Write-Output "Connecting to Microsoft Graph..."
-  Connect-MgGraph -Scopes "Policy.Read.All" -NoWelcome ${loginHint}
+  Connect-MgGraph -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}
   Write-Output "Connected. Fetching policies..."
-  $policies = Get-MgIdentityConditionalAccessPolicy
+  $policies = Get-MgIdentityConditionalAccessPolicy -All
   Write-Output "POLICY_JSON_START"
-  $policies | Select-Object Id, DisplayName, State, CreatedDateTime, ModifiedDateTime | ConvertTo-Json -Depth 3
+  $policies | ConvertTo-Json -Depth 10
   Write-Output "POLICY_JSON_END"
   Disconnect-MgGraph | Out-Null
 } catch {
@@ -181,28 +181,83 @@ try {
     return { logs, results }
   })
 
-  const MG_IMPORT = `Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue\nImport-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue\n`
+  const safe = s => String(s || '').replace(/'/g, "''")
+
+  const MG_RECONNECT = `
+$ProgressPreference = 'SilentlyContinue'
+Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
+Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
+try {
+  Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -Silent -ErrorAction Stop
+} catch {
+  Write-Output "ERROR: Session expired — please reload policies to reconnect."
+  exit 1
+}`
 
   ipcMain.handle('policies:update', async (_, id, patch) => {
-    const script = `${MG_IMPORT}
-$params = '${JSON.stringify(patch)}' | ConvertFrom-Json -AsHashtable
-Update-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId '${id}' -BodyParameter $params
-Write-Output "SUCCESS"
+    const safeId = safe(id)
+    const patchJson = JSON.stringify(patch)
+    const script = `${MG_RECONNECT}
+try {
+  $patchJson = @'
+${patchJson}
+'@
+  $params = $patchJson | ConvertFrom-Json -AsHashtable
+  Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body ($params | ConvertTo-Json -Depth 10) -ContentType 'application/json'
+  Write-Output "SUCCESS"
+} catch {
+  Write-Output "ERROR: $($_.Exception.Message)"
+} finally {
+  try { Disconnect-MgGraph -ErrorAction SilentlyContinue } catch {}
+}
 `
-    const { exitCode } = await runScript(script, null, null)
-    return { success: exitCode === 0 }
+    const lines = []
+    const { exitCode } = await runScript(script, (line) => lines.push(line), null)
+    const hasSuccess = lines.some(l => l.trim() === 'SUCCESS')
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
+    if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
+    return { success: hasSuccess || exitCode === 0 }
   })
 
   ipcMain.handle('policies:delete', async (_, id) => {
-    const script = `${MG_IMPORT}\nRemove-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId '${id}' -Confirm:$false\nWrite-Output "SUCCESS"`
-    const { exitCode } = await runScript(script, null, null)
-    return { success: exitCode === 0 }
+    const safeId = safe(id)
+    const script = `${MG_RECONNECT}
+try {
+  Remove-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId '${safeId}' -Confirm:$false
+  Write-Output "SUCCESS"
+} catch {
+  Write-Output "ERROR: $($_.Exception.Message)"
+} finally {
+  try { Disconnect-MgGraph -ErrorAction SilentlyContinue } catch {}
+}
+`
+    const lines = []
+    const { exitCode } = await runScript(script, (line) => lines.push(line), null)
+    const hasSuccess = lines.some(l => l.trim() === 'SUCCESS')
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
+    if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
+    return { success: hasSuccess || exitCode === 0 }
   })
 
   ipcMain.handle('policies:toggleState', async (_, id, state) => {
-    const script = `${MG_IMPORT}\nUpdate-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId '${id}' -State '${state}'\nWrite-Output "SUCCESS"`
-    const { exitCode } = await runScript(script, null, null)
-    return { success: exitCode === 0 }
+    const safeId = safe(id)
+    const safeState = safe(state)
+    const script = `${MG_RECONNECT}
+try {
+  Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body (@{ state = '${safeState}' } | ConvertTo-Json) -ContentType 'application/json'
+  Write-Output "SUCCESS"
+} catch {
+  Write-Output "ERROR: $($_.Exception.Message)"
+} finally {
+  try { Disconnect-MgGraph -ErrorAction SilentlyContinue } catch {}
+}
+`
+    const lines = []
+    const { exitCode } = await runScript(script, (line) => lines.push(line), null)
+    const hasSuccess = lines.some(l => l.trim() === 'SUCCESS')
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
+    if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
+    return { success: hasSuccess || exitCode === 0 }
   })
 
   // Report: audit CA policies

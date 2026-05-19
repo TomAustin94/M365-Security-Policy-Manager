@@ -8,6 +8,64 @@ import SlideOver from '../components/SlideOver'
 import SearchInput from '../components/SearchInput'
 import LogPanel from '../components/LogPanel'
 
+// Handle PascalCase (PS) and camelCase (Graph API) property names
+function pick(obj, ...keys) {
+  if (!obj) return undefined
+  for (const k of keys) { if (obj[k] !== undefined) return obj[k] }
+}
+
+const GRANT_LABELS = {
+  mfa: 'Require MFA', compliantDevice: 'Require compliant device',
+  domainJoinedDevice: 'Require hybrid joined', approvedApplication: 'Require approved app',
+  compliantApplication: 'Require app protection', passwordChange: 'Require password change',
+  block: 'Block access',
+}
+
+function fmtUsers(u) {
+  if (!u) return 'All Users'
+  const inc = pick(u,'IncludeUsers','includeUsers') || []
+  const incG = pick(u,'IncludeGroups','includeGroups') || []
+  const excU = pick(u,'ExcludeUsers','excludeUsers') || []
+  const excG = pick(u,'ExcludeGroups','excludeGroups') || []
+  if (inc.includes('All') || inc.includes('all')) {
+    const ex = [...(excU.length ? [`${excU.length} user(s) excl.`] : []), ...(excG.length ? [`${excG.length} group(s) excl.`] : [])]
+    return ex.length ? `All Users (${ex.join(', ')})` : 'All Users'
+  }
+  const parts = [...(incG.length ? [`${incG.length} group(s)`] : []), ...(inc.length ? [`${inc.length} user(s)`] : [])]
+  return parts.join(', ') || 'Specific users'
+}
+
+function fmtApps(a) {
+  if (!a) return 'All Apps'
+  const inc = pick(a,'IncludeApplications','includeApplications') || []
+  const exc = pick(a,'ExcludeApplications','excludeApplications') || []
+  if (inc.includes('All') || inc.includes('all')) return exc.length ? `All Apps (${exc.length} excl.)` : 'All Apps'
+  return inc.length ? `${inc.length} app(s)` : 'Specific apps'
+}
+
+function fmtGrant(g) {
+  if (!g) return '—'
+  const controls = pick(g,'BuiltInControls','builtInControls') || []
+  const op = pick(g,'Operator','operator') || 'OR'
+  if (!controls.length) return '—'
+  return controls.map(c => GRANT_LABELS[c] || c).join(` ${op} `)
+}
+
+function fmtSession(s) {
+  if (!s) return null
+  const parts = []
+  const sf = pick(s,'SignInFrequency','signInFrequency')
+  const pb = pick(s,'PersistentBrowser','persistentBrowser')
+  if (sf?.IsEnabled || sf?.isEnabled) parts.push(`Sign-in frequency: ${sf.Value || sf.value}h`)
+  if (pb?.IsEnabled || pb?.isEnabled) parts.push(`Persistent browser: ${pb.Mode || pb.mode}`)
+  return parts.join(', ') || null
+}
+
+// Detect policies created by this tool: "CA001: ..." or "Prefix — CA001: ..."
+function isToolManaged(displayName) {
+  return /(?:^.+ — )?[A-Z]{2}\d{3}: /.test(displayName || '')
+}
+
 function stateBadge(state) {
   if (!state) return <Badge variant="neutral">Unknown</Badge>
   const s = state.toLowerCase()
@@ -22,22 +80,59 @@ function formatDate(d) {
   try { return new Date(d).toLocaleDateString() } catch { return d }
 }
 
-function JsonEditor({ value, onChange }) {
-  const [text, setText] = useState(typeof value === 'string' ? value : JSON.stringify(value, null, 2))
-  const [error, setError] = useState('')
+// ── Policy editor ─────────────────────────────────────────────────────────────
+function SummaryRow({ label, value }) {
+  if (!value) return null
   return (
-    <div className="space-y-1">
-      <textarea
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value)
-          try { JSON.parse(e.target.value); setError(''); onChange?.(e.target.value) }
-          catch { setError('Invalid JSON') }
-        }}
-        rows={18}
-        className="block w-full font-mono text-xs border border-gray-300 rounded-md p-3 focus:border-navy focus:ring-1 focus:ring-navy resize-none bg-gray-950 text-green-400"
-      />
-      {error && <p className="text-xs text-red-600">{error}</p>}
+    <div className="flex gap-3 px-4 py-2.5 text-sm">
+      <span className="text-xs font-medium text-gray-500 w-32 flex-shrink-0 mt-0.5">{label}</span>
+      <span className="text-xs text-gray-800 flex-1">{value}</span>
+    </div>
+  )
+}
+
+function PolicyEditor({ policy, onSave, onCancel, saving }) {
+  const [name, setName] = React.useState(pick(policy,'DisplayName','displayName') || '')
+  const [state, setState] = React.useState(pick(policy,'State','state') || 'enabled')
+
+  const cond = pick(policy,'Conditions','conditions') || {}
+  const sessionStr = fmtSession(pick(policy,'SessionControls','sessionControls'))
+  const inputCls = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy'
+
+  return (
+    <div className="p-6 space-y-5">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
+          <input className={inputCls} value={name} onChange={e => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">State</label>
+          <select className={inputCls} value={state} onChange={e => setState(e.target.value)}>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+            <option value="enabledForReportingButNotEnforced">Report Only</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Policy conditions (read-only)</p>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 divide-y divide-gray-100">
+          <SummaryRow label="Users" value={fmtUsers(pick(cond,'Users','users'))} />
+          <SummaryRow label="Applications" value={fmtApps(pick(cond,'Applications','applications'))} />
+          <SummaryRow label="Grant Controls" value={fmtGrant(pick(policy,'GrantControls','grantControls'))} />
+          {sessionStr && <SummaryRow label="Session Controls" value={sessionStr} />}
+        </div>
+        <p className="text-xs text-gray-400 mt-2">To change conditions or grant controls, edit in the Entra portal.</p>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button variant="primary" onClick={() => onSave({ DisplayName: name, State: state })} loading={saving}>
+          Save Changes
+        </Button>
+      </div>
     </div>
   )
 }
@@ -180,13 +275,13 @@ export default function ManagePolicies() {
   const [policies, setPolicies] = useState([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [managedOnly, setManagedOnly] = useState(false)
   const [selectedRows, setSelectedRows] = useState(new Set())
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [bulkAction, setBulkAction] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
-  const [editJson, setEditJson] = useState('')
   const [saveLoading, setSaveLoading] = useState(false)
   const [authLogs, setAuthLogs] = useState([])
 
@@ -224,6 +319,7 @@ export default function ManagePolicies() {
   }
 
   const filtered = policies.filter((p) => {
+    if (managedOnly && !isToolManaged(p.DisplayName)) return false
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -291,15 +387,14 @@ export default function ManagePolicies() {
     }
   }
 
-  const handleEdit = (policy) => { setEditTarget(policy); setEditJson(JSON.stringify(policy, null, 2)) }
+  const handleEdit = (policy) => { setEditTarget(policy) }
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (patch) => {
     if (!window.api || !editTarget) return
     setSaveLoading(true)
     try {
-      const patch = JSON.parse(editJson)
       await window.api.policies.update(editTarget.Id, patch)
-      setPolicies((ps) => ps.map((p) => p.Id === editTarget.Id ? { ...p, ...patch } : p))
+      setPolicies(ps => ps.map(p => p.Id === editTarget.Id ? { ...p, ...patch } : p))
       addNotification('Policy updated', 'success')
       setEditTarget(null)
     } catch (err) {
@@ -351,7 +446,20 @@ export default function ManagePolicies() {
       {/* Toolbar */}
       {policies.length > 0 && (
         <div className="flex items-center justify-between gap-3 mb-4">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search policies..." className="w-72" />
+          <div className="flex items-center gap-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search policies..." className="w-72" />
+            <button
+              onClick={() => setManagedOnly(v => !v)}
+              className={[
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                managedOnly
+                  ? 'bg-navy text-white border-navy'
+                  : 'bg-white text-gray-500 border-gray-300 hover:border-gray-400',
+              ].join(' ')}
+            >
+              {managedOnly ? 'Managed by tool ✓' : 'All policies'}
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             {selectedRows.size > 0 && (
               <>
@@ -416,31 +524,52 @@ export default function ManagePolicies() {
                       <td key={j} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded animate-pulse" /></td>
                     ))}</tr>
                   ))
-                ) : filtered.map((policy) => (
-                  <tr key={policy.Id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <input type="checkbox" checked={selectedRows.has(policy.Id)} onChange={() => toggleRow(policy.Id)} className="h-4 w-4 rounded border-gray-300 text-navy" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{policy.DisplayName}</div>
-                      <div className="text-xs text-gray-400 font-mono">{policy.Id}</div>
-                    </td>
-                    <td className="px-4 py-3">{stateBadge(policy.State)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{formatDate(policy.CreatedDateTime)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{formatDate(policy.ModifiedDateTime)}</td>
-                    <td className="px-6 py-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => handleEdit(policy)}>Edit</Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleToggle(policy)}>
-                          {policy.State === 'enabled' ? 'Disable' : 'Enable'}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(policy)}>
-                          <span className="text-red-600">Delete</span>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                ) : filtered.map((policy) => {
+                  const managed = isToolManaged(policy.DisplayName)
+                  return (
+                    <tr key={policy.Id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <input type="checkbox" checked={selectedRows.has(policy.Id)} onChange={() => toggleRow(policy.Id)} className="h-4 w-4 rounded border-gray-300 text-navy" />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">{policy.DisplayName}</span>
+                          {!managed && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">External</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400 font-mono">{policy.Id}</div>
+                      </td>
+                      <td className="px-4 py-3">{stateBadge(policy.State)}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{formatDate(policy.CreatedDateTime)}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{formatDate(policy.ModifiedDateTime)}</td>
+                      <td className="px-6 py-3 text-right">
+                        <div className="flex justify-end gap-1">
+                          {managed ? (
+                            <Button size="sm" variant="ghost" onClick={() => handleEdit(policy)}>Edit</Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const url = `https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/PolicyBlade/policyId/${policy.Id}`
+                                window.api?.app?.openExternal(url)
+                              }}
+                            >
+                              Open in Entra ↗
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => handleToggle(policy)}>
+                            {policy.State === 'enabled' ? 'Disable' : 'Enable'}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(policy)}>
+                            <span className="text-red-600">Delete</span>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -463,14 +592,12 @@ export default function ManagePolicies() {
       </Modal>
 
       <SlideOver open={!!editTarget} onClose={() => setEditTarget(null)} title={editTarget ? `Edit: ${editTarget.DisplayName}` : 'Edit Policy'}>
-        <div className="p-6 space-y-4">
-          <p className="text-xs text-gray-500">Edit the policy JSON and save to apply changes.</p>
-          <JsonEditor value={editJson} onChange={setEditJson} />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
-            <Button variant="primary" onClick={handleSaveEdit} loading={saveLoading}>Save Changes</Button>
-          </div>
-        </div>
+        <PolicyEditor
+          policy={editTarget}
+          onSave={handleSaveEdit}
+          onCancel={() => setEditTarget(null)}
+          saving={saveLoading}
+        />
       </SlideOver>
     </div>
   )

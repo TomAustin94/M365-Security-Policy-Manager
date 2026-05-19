@@ -36,7 +36,7 @@ Write-Output "SUCCESS: ${id} noted"`
 
 function dn(policy, prefix) {
   const base = `${policy.id}: ${policy.name}`
-  return prefix ? `${safe(prefix)} — ${base}` : base
+  return prefix ? `${safe(prefix)} - ${base}` : base
 }
 
 // ─── Connection detection ─────────────────────────────────────────────────────
@@ -54,10 +54,9 @@ function buildConnectGraph(credentials, authMode, opts = {}) {
   const scopes = '"Policy.ReadWrite.ConditionalAccess Policy.Read.All DeviceManagementConfiguration.ReadWrite.All Organization.ReadWrite.All Directory.ReadWrite.All RoleManagement.ReadWrite.Directory AuditLog.Read.All"'
   if (authMode === 'interactive') {
     const tid = credentials?.tenantId ? `-TenantId '${safe(credentials.tenantId)}'` : ''
-    const deviceFlag = opts.useDeviceCode ? '-UseDeviceAuthentication' : ''
-    return `Write-Output "CONNECTING: Microsoft Graph (interactive)..."
+    return `Write-Output "CONNECTING: Microsoft Graph - follow the device code prompt below..."
 try {
-    Connect-MgGraph ${tid} ${deviceFlag} -Scopes ${scopes} -NoWelcome
+    Connect-MgGraph ${tid} -UseDeviceAuthentication -Scopes ${scopes} -NoWelcome
     Write-Output "CONNECTED: Microsoft Graph"
 } catch {
     Write-Output "ERROR: Graph connect failed - $($_.Exception.Message)"; exit 1
@@ -840,14 +839,14 @@ function buildPolicyScript(policy, config, prefix) {
 function buildModuleImports(graph, exo, ipps) {
   const lines = []
   if (graph) lines.push(
-    `if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) { Write-Output "ERROR: Microsoft.Graph module not found — install it on the Modules page"; exit 1 }`,
+    `if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) { Write-Output "ERROR: Microsoft.Graph module not found - install it on the Modules page"; exit 1 }`,
     `Import-Module Microsoft.Graph.Authentication -ErrorAction Stop`,
     `Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue`,
     `Import-Module Microsoft.Graph.DeviceManagement -ErrorAction SilentlyContinue`,
     `Import-Module Microsoft.Graph -ErrorAction SilentlyContinue`
   )
   if (exo) lines.push(
-    `if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) { Write-Output "ERROR: ExchangeOnlineManagement module not found — install it on the Modules page"; exit 1 }`,
+    `if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) { Write-Output "ERROR: ExchangeOnlineManagement module not found - install it on the Modules page"; exit 1 }`,
     `Import-Module ExchangeOnlineManagement -ErrorAction Stop`
   )
   return lines.join('\n')

@@ -172,6 +172,7 @@ function ItGlueConnect({ credentials, setCredentials }) {
   const [selectedOrg, setSelectedOrg] = useState(null)
   const [passwords, setPasswords] = useState([])
   const [pwLoading, setPwLoading] = useState(false)
+  const [selectedPwId, setSelectedPwId] = useState(null)
 
   useEffect(() => {
     if (settings.itGlueApiKey) loadOrgs()
@@ -181,6 +182,7 @@ function ItGlueConnect({ credentials, setCredentials }) {
     if (!selectedOrg || !window.api) return
     setPwLoading(true)
     setCredentials(null)
+    setSelectedPwId(null)
     window.api.itglue.getPasswords(selectedOrg.id)
       .then((res) => setPasswords(res || []))
       .catch(() => setPasswords([]))
@@ -233,10 +235,10 @@ function ItGlueConnect({ credentials, setCredentials }) {
           ) : passwords.map((pw) => (
             <button
               key={pw.id}
-              onClick={() => setCredentials({ username: pw.username, password: pw.password, tenantId: '' })}
+              onClick={() => { setSelectedPwId(pw.id); setCredentials({ username: pw.username, password: pw.password, tenantId: '' }) }}
               className={[
                 'w-full text-left px-3 py-2 rounded text-sm transition-colors',
-                credentials?.username === pw.username ? 'bg-navy text-white font-medium' : 'hover:bg-gray-50 text-gray-800',
+                selectedPwId === pw.id ? 'bg-navy text-white font-medium' : 'hover:bg-gray-50 text-gray-800',
               ].join(' ')}
             >
               <p className="font-medium truncate">{pw.name}</p>
@@ -260,7 +262,7 @@ function WamConnect() {
         <p className="text-sm font-semibold text-blue-800">Interactive / WAM sign-in</p>
       </div>
       <p className="text-sm text-blue-700">
-        Clicking Load Policies will open a browser sign-in window. Sign in with your Global Admin or Security Admin account — MFA is fully supported.
+        Clicking Load Policies will start a device code sign-in. A code and URL will appear in the connection output below — go to <strong>microsoft.com/devicelogin</strong> and enter the code to authenticate.
       </p>
     </div>
   )

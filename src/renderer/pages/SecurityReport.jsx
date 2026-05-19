@@ -382,6 +382,7 @@ function ItGluePanel({ org, setOrg, credentials, setCredentials }) {
   const [allPasswords, setAllPasswords] = useState([])
   const [pwLoading, setPwLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [selectedPwId, setSelectedPwId] = useState(null)
 
   useEffect(() => { if (settings.itGlueApiKey) loadOrgs() }, [])
 
@@ -437,7 +438,7 @@ function ItGluePanel({ org, setOrg, credentials, setCredentials }) {
           ) : filteredOrgs.map(o => (
             <button
               key={o.id}
-              onClick={() => { setOrg(o); setCredentials(null) }}
+              onClick={() => { setOrg(o); setCredentials(null); setSelectedPwId(null) }}
               className={['w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs transition-all',
                 org?.id === o.id ? 'border-navy bg-navy-50 text-navy font-medium' : 'border-gray-200 hover:border-navy-200 hover:bg-gray-50',
               ].join(' ')}
@@ -461,9 +462,9 @@ function ItGluePanel({ org, setOrg, credentials, setCredentials }) {
               {passwords.map(pw => (
                 <button
                   key={pw.id}
-                  onClick={() => setCredentials({ username: pw.username, password: pw.password, tenantId: '' })}
+                  onClick={() => { setSelectedPwId(pw.id); setCredentials({ username: pw.username, password: pw.password, tenantId: '' }) }}
                   className={['w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs transition-all',
-                    credentials?.username === pw.username ? 'border-navy bg-navy-50 text-navy' : 'border-gray-200 hover:border-navy-200 hover:bg-gray-50',
+                    selectedPwId === pw.id ? 'border-navy bg-navy-50 text-navy' : 'border-gray-200 hover:border-navy-200 hover:bg-gray-50',
                   ].join(' ')}
                 >
                   <div>
@@ -497,7 +498,7 @@ function InteractivePanel({ org, setOrg, setCredentials }) {
         placeholder="e.g. AffinityIT"
         className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
       />
-      <p className="mt-2 text-xs text-gray-500">A browser sign-in window will open when you generate the report.</p>
+      <p className="mt-2 text-xs text-gray-500">A device code will appear in the output — go to microsoft.com/devicelogin and enter it to authenticate.</p>
     </div>
   )
 }

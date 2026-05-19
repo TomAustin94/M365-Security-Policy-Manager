@@ -110,23 +110,24 @@ function registerIpcHandlers(win) {
 
   // Policies
   ipcMain.handle('policies:list', async (_, credentials, authMode) => {
-    // Connect-MgGraph does not support -Credential; use -LoginHint to pre-fill
-    // the browser/device-code sign-in with the IT Glue username when available
     const loginHint = (authMode !== 'interactive' && credentials?.username)
-      ? `-LoginHint '${credentials.username}'`
+      ? `-LoginHint '${credentials.username.replace(/'/g, "''")}'`
       : ''
+    const connectArgs = authMode === 'interactive'
+      ? `-UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome`
+      : `-Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}`
 
     const script = `
 $ProgressPreference = 'SilentlyContinue'
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-  Write-Output "ERROR: Microsoft.Graph module not found — install it on the Modules page"
+  Write-Output "ERROR: Microsoft.Graph module not found - install it on the Modules page"
   exit 1
 }
 Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
   Write-Output "Connecting to Microsoft Graph..."
-  Connect-MgGraph -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}
+  Connect-MgGraph ${connectArgs}
   Write-Output "Connected. Fetching policies..."
   $policies = Get-MgIdentityConditionalAccessPolicy -All
   Write-Output "POLICY_JSON_START"
@@ -276,7 +277,9 @@ Write-Output "CONNECTED: Reading Conditional Access policies..."
 try {
   $policies = Get-MgIdentityConditionalAccessPolicy -All
   $count = @($policies).Count
-  Write-Output "DATA:$(($policies | ConvertTo-Json -Compress -Depth 10))"
+  Write-Output "POLICY_JSON_START"
+  $policies | ConvertTo-Json -Depth 10
+  Write-Output "POLICY_JSON_END"
   Write-Output "DONE: $count policies found"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
@@ -296,11 +299,14 @@ try {
       }
     )
 
-    // Parse DATA: line
-    const dataLine = lines.find(l => l.startsWith('DATA:'))
-    if (dataLine) {
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
+    if (errorLine) return { error: errorLine.slice('ERROR:'.length).trim() }
+
+    const startIdx = lines.indexOf('POLICY_JSON_START')
+    const endIdx = lines.indexOf('POLICY_JSON_END')
+    if (startIdx !== -1 && endIdx > startIdx) {
       try {
-        const json = dataLine.slice('DATA:'.length).trim()
+        const json = lines.slice(startIdx + 1, endIdx).join('\n')
         const parsed = JSON.parse(json)
         return { policies: Array.isArray(parsed) ? parsed : [parsed] }
       } catch (err) {
@@ -308,8 +314,6 @@ try {
       }
     }
 
-    const errorLine = lines.find(l => l.startsWith('ERROR:'))
-    if (errorLine) return { error: errorLine.slice('ERROR:'.length).trim() }
     return { error: 'No data returned from PowerShell' }
   })
 

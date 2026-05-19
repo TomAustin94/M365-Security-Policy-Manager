@@ -104,9 +104,12 @@ function runScript(script, onData, onError) {
     const allOutput = []
     const stripCtrl = (s) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b[()][AB]/g, '')
 
+    let stdoutBuf = ''
     proc.stdout.on('data', (data) => {
-      const lines = data.toString('utf8').split('\n')
-      lines.forEach((raw) => {
+      stdoutBuf += data.toString('utf8')
+      const parts = stdoutBuf.split('\n')
+      stdoutBuf = parts.pop() // keep incomplete last chunk
+      parts.forEach((raw) => {
         const line = stripCtrl(raw).trimEnd()
         if (line.trim()) {
           allOutput.push(line)
@@ -115,9 +118,12 @@ function runScript(script, onData, onError) {
       })
     })
 
+    let stderrBuf = ''
     proc.stderr.on('data', (data) => {
-      const lines = data.toString('utf8').split('\n')
-      lines.forEach((raw) => {
+      stderrBuf += data.toString('utf8')
+      const parts = stderrBuf.split('\n')
+      stderrBuf = parts.pop()
+      parts.forEach((raw) => {
         const line = stripCtrl(raw).trimEnd()
         if (line.trim()) {
           if (onError) onError(line)
@@ -130,6 +136,15 @@ function runScript(script, onData, onError) {
     }
 
     proc.on('close', (code) => {
+      // flush any remaining buffered content
+      if (stdoutBuf.trim()) {
+        const line = stripCtrl(stdoutBuf).trimEnd()
+        if (line.trim()) { allOutput.push(line); if (onData) onData(line) }
+      }
+      if (stderrBuf.trim()) {
+        const line = stripCtrl(stderrBuf).trimEnd()
+        if (line.trim() && onError) onError(line)
+      }
       cleanup()
       resolve({ exitCode: code, output: allOutput.join('\n') })
     })

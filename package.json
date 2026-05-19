@@ -21,6 +21,8 @@
   "build": {
     "appId": "com.tomaustin94.m365-security-policy-manager",
     "productName": "M365 Security Policy Manager",
+    "copyright": "Copyright © 2025 AffinityIT",
+    "artifactName": "m365-policy-manager-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
     },
@@ -29,6 +31,12 @@
       "src/preload/**/*",
       "dist-renderer/**/*",
       "scripts/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts/install-powershell.sh",
+        "to": "scripts/install-powershell.sh"
+      }
     ],
     "publish": [
       {
@@ -54,7 +62,7 @@
         }
       ],
       "category": "Utility",
-      "icon": "assets/icon.png"
+      "icon": "build/icon.png"
     },
     "win": {
       "target": [
@@ -65,7 +73,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "build/icon.ico"
     },
     "mac": {
       "target": [
@@ -76,7 +84,7 @@
           "target": "zip"
         }
       ],
-      "icon": "assets/icon.icns"
+      "icon": "build/icon.icns"
     },
     "nsis": {
       "oneClick": false,

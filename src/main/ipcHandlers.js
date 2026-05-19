@@ -200,8 +200,17 @@ Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
   Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -Silent -ErrorAction Stop
 } catch {
-  Write-Output "ERROR: Session expired - please reload policies to reconnect."
-  exit 1
+  $errMsg = $_.Exception.Message
+  if ($errMsg -match 'listener') {
+    $mgCtx = Get-MgContext -ErrorAction SilentlyContinue
+    if (-not $mgCtx) {
+      Write-Output "ERROR: Session expired - please reload policies to reconnect."
+      exit 1
+    }
+  } else {
+    Write-Output "ERROR: Session expired - please reload policies to reconnect."
+    exit 1
+  }
 }`
 
   ipcMain.handle('policies:update', async (_, id, patch) => {

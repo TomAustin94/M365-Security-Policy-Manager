@@ -191,7 +191,7 @@ Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
   Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -Silent -ErrorAction Stop
 } catch {
-  Write-Output "ERROR: Session expired — please reload policies to reconnect."
+  Write-Output "ERROR: Session expired - please reload policies to reconnect."
   exit 1
 }`
 

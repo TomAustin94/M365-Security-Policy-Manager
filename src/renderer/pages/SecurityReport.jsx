@@ -597,11 +597,24 @@ function ItGluePanel({ org, setOrg, credentials, setCredentials }) {
           )}
         </div>
       )}
+      {credentials && (
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Tenant domain or ID <span className="font-normal text-gray-400 normal-case">(optional)</span></label>
+          <input
+            type="text"
+            value={credentials.tenantId || ''}
+            onChange={(e) => setCredentials(prev => ({ ...prev, tenantId: e.target.value.trim() }))}
+            placeholder="e.g. contoso.onmicrosoft.com"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          />
+          <p className="text-xs text-gray-400 mt-1">Leave blank to sign in to your home tenant</p>
+        </div>
+      )}
     </div>
   )
 }
 
-function InteractivePanel({ org, setOrg, setCredentials }) {
+function InteractivePanel({ org, setOrg, credentials, setCredentials }) {
   useEffect(() => {
     setCredentials({ interactive: true, username: '', password: '', tenantId: '' })
   }, [])
@@ -617,6 +630,17 @@ function InteractivePanel({ org, setOrg, setCredentials }) {
           placeholder="e.g. AffinityIT"
           className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
         />
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Tenant domain or ID <span className="font-normal text-gray-400 normal-case">(optional)</span></label>
+        <input
+          type="text"
+          value={credentials?.tenantId || ''}
+          onChange={(e) => setCredentials(prev => ({ ...(prev || { interactive: true }), tenantId: e.target.value.trim() }))}
+          placeholder="e.g. contoso.onmicrosoft.com"
+          className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+        />
+        <p className="text-xs text-gray-400 mt-1">Leave blank to sign in to your home tenant</p>
       </div>
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5">
         <p className="text-xs font-semibold text-blue-700 mb-0.5">Device code login</p>
@@ -680,7 +704,7 @@ export default function SecurityReport() {
 
     try {
       const result = await window.api.report.audit({
-        credentials: authMode === 'interactive' ? null : credentials,
+        credentials,
         authMode,
       })
 
@@ -739,7 +763,7 @@ export default function SecurityReport() {
           {authMode === 'itglue' ? (
             <ItGluePanel org={org} setOrg={setOrg} credentials={credentials} setCredentials={setCredentials} />
           ) : (
-            <InteractivePanel org={org} setOrg={setOrg} setCredentials={setCredentials} />
+            <InteractivePanel org={org} setOrg={setOrg} credentials={credentials} setCredentials={setCredentials} />
           )}
         </div>
 

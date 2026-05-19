@@ -197,7 +197,9 @@ function ItGlueConnect({ credentials, setCredentials }) {
     )
   }
 
+  const inputCls = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy'
   return (
+    <div className="space-y-3">
     <div className="grid grid-cols-2 gap-4">
       {/* Org picker */}
       <div>
@@ -248,22 +250,50 @@ function ItGlueConnect({ credentials, setCredentials }) {
         </div>
       </div>
     </div>
+    {credentials && (
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Tenant domain or ID <span className="font-normal text-gray-400">(optional)</span></label>
+        <input
+          type="text"
+          value={credentials.tenantId || ''}
+          onChange={(e) => setCredentials(prev => ({ ...prev, tenantId: e.target.value.trim() }))}
+          placeholder="e.g. contoso.onmicrosoft.com"
+          className={inputCls}
+        />
+        <p className="text-xs text-gray-400 mt-1">Leave blank to sign in to your home tenant</p>
+      </div>
+    )}
+    </div>
   )
 }
 
 // ── WAM connection form ───────────────────────────────────────────────────────
-function WamConnect() {
+function WamConnect({ credentials, setCredentials }) {
+  const inputCls = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy'
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
-      <div className="flex items-center gap-2">
-        <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
-        </svg>
-        <p className="text-sm font-semibold text-blue-800">Interactive / WAM sign-in</p>
+    <div className="space-y-3">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+          </svg>
+          <p className="text-sm font-semibold text-blue-800">Interactive / WAM sign-in</p>
+        </div>
+        <p className="text-sm text-blue-700">
+          Clicking Load Policies will start a device code sign-in. A code and URL will appear in the connection output below — go to <strong>microsoft.com/devicelogin</strong> and enter the code to authenticate.
+        </p>
       </div>
-      <p className="text-sm text-blue-700">
-        Clicking Load Policies will start a device code sign-in. A code and URL will appear in the connection output below — go to <strong>microsoft.com/devicelogin</strong> and enter the code to authenticate.
-      </p>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Tenant domain or ID <span className="font-normal text-gray-400">(optional)</span></label>
+        <input
+          type="text"
+          value={credentials?.tenantId || ''}
+          onChange={(e) => setCredentials(prev => ({ ...(prev || { interactive: true }), tenantId: e.target.value.trim() }))}
+          placeholder="e.g. contoso.onmicrosoft.com"
+          className={inputCls}
+        />
+        <p className="text-xs text-gray-400 mt-1">Leave blank to sign in to your home tenant</p>
+      </div>
     </div>
   )
 }
@@ -296,7 +326,7 @@ export default function ManagePolicies() {
 
   const handleAuthModeChange = (mode) => {
     setAuthMode(mode)
-    setCredentials(null)
+    setCredentials(mode === 'interactive' ? { interactive: true, tenantId: '' } : null)
     setConnected(false)
     setPolicies([])
   }
@@ -308,7 +338,7 @@ export default function ManagePolicies() {
     setLoading(true)
     setAuthLogs([])
     try {
-      const creds = authMode === 'interactive' ? { interactive: true } : credentials
+      const creds = authMode === 'interactive' ? { interactive: true, tenantId: credentials?.tenantId || '' } : credentials
       const result = await window.api.policies.list(creds, authMode)
       setPolicies(Array.isArray(result) ? result : [])
       setSelectedRows(new Set())
@@ -422,7 +452,7 @@ export default function ManagePolicies() {
           <AuthModeSelector mode={authMode} onChange={handleAuthModeChange} />
           {authMode === 'itglue'
             ? <ItGlueConnect credentials={credentials} setCredentials={setCredentials} />
-            : <WamConnect />
+            : <WamConnect credentials={credentials} setCredentials={setCredentials} />
           }
           <div className="flex justify-end">
             <Button variant="primary" onClick={handleLoad} loading={loading} disabled={!canLoad}>

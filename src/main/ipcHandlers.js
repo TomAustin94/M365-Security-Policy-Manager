@@ -121,9 +121,12 @@ function registerIpcHandlers(win) {
     const loginHint = (authMode !== 'interactive' && credentials?.username)
       ? `-LoginHint '${credentials.username.replace(/'/g, "''")}'`
       : ''
+    const tenantIdFlag = credentials?.tenantId
+      ? `-TenantId '${credentials.tenantId.replace(/'/g, "''")}'`
+      : ''
     // Always use device code flow — WAM (the Windows broker fallback) requires a
     // parent window handle that is unavailable in a console-less subprocess.
-    const connectArgs = `-UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}`
+    const connectArgs = `-UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${tenantIdFlag} ${loginHint}`
 
     const script = `
 $ProgressPreference = 'SilentlyContinue'

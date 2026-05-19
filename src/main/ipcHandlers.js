@@ -8,6 +8,7 @@ const logger = require('./logger')
 const path = require('path')
 const { execFile } = require('child_process')
 const fs = require('fs')
+const psSession = require('./psSession')
 
 
 function escHtml(s) {
@@ -296,66 +297,43 @@ function registerIpcHandlers(win) {
   ipcMain.handle('itglue:getOrgs', async () => { try { return await itGlue.getOrganizations() } catch { return [] } })
   ipcMain.handle('itglue:getPasswords', async (_, orgId) => { try { return await itGlue.getPasswords(orgId) } catch { return [] } })
 
-  // Policies
-  ipcMain.handle('policies:list', async (_, credentials, authMode) => {
-    logger.info(`IPC: policies:list authMode=${authMode} hasUser=${!!(credentials?.username)}`)
-    const loginHint = (authMode !== 'interactive' && credentials?.username)
-      ? `-LoginHint '${credentials.username.replace(/'/g, "''")}'`
-      : ''
-
-    // Always use device code flow — WAM (the Windows broker fallback) requires a
-    // parent window handle that is unavailable in a console-less subprocess.
-    // -ContextScope CurrentUser persists the MSAL token to disk so subsequent
-    // processes can reuse it silently (avoids "Session expired" on toggle/edit).
-    const connectArgs = `-UseDeviceAuthentication -ContextScope CurrentUser -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}`
-
-    const script = `
-$ProgressPreference = 'SilentlyContinue'
-if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-  Write-Output "ERROR: Microsoft.Graph module not found - install it on the Modules page"
-  exit 1
-}
-Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
-try {
-  Write-Output "Connecting to Microsoft Graph..."
-  Connect-MgGraph ${connectArgs}
-  Write-Output "Connected. Fetching policies..."
-  $policies = Get-MgIdentityConditionalAccessPolicy -All
-  Write-Output "POLICY_JSON_START"
-  $policies | ConvertTo-Json -Depth 10
-  Write-Output "POLICY_JSON_END"
-  $mgCtx = Get-MgContext -ErrorAction SilentlyContinue
-  if ($mgCtx) {
-    Write-Output "CONTEXT_JSON_START"
-    @{ Account = $mgCtx.Account; TenantId = $mgCtx.TenantId } | ConvertTo-Json
-    Write-Output "CONTEXT_JSON_END"
-  }
-  # Do NOT Disconnect — MSAL token stays on disk for silent reuse by toggle/edit
-} catch {
-  Write-Output "ERROR: $($_.Exception.Message)"
-}
-`
-    const lines = []
-    const { output } = await runScript(
-      script,
-      (line) => { lines.push(line); win.webContents.send('ps:output', line) },
-      (line) => win.webContents.send('ps:error', line)
-    )
-    let policies = []
-    let context = null
+  // Session management
+  ipcMain.handle('session:connect', async (_, credentials, authMode) => {
     try {
+      if (!psSession.alive) await psSession.start(win)
+      const context = await psSession.connect(credentials, authMode)
+      return { context }
+    } catch (err) {
+      return { error: err.message }
+    }
+  })
+
+  ipcMain.handle('session:disconnect', async () => {
+    psSession.kill()
+    return { success: true }
+  })
+
+  ipcMain.handle('session:getContext', async () => psSession.context)
+
+  // Policies
+  ipcMain.handle('policies:list', async () => {
+    if (!psSession.alive) return { error: 'No active session' }
+    try {
+      const lines = []
+      const output = await psSession.run(
+        `$policies = Get-MgIdentityConditionalAccessPolicy -All\nWrite-Output "POLICY_JSON_START"\n$policies | ConvertTo-Json -Depth 10\nWrite-Output "POLICY_JSON_END"`,
+        (line) => { lines.push(line); win.webContents.send('ps:output', line) }
+      )
+      let policies = []
       const jsonBlock = output.match(/POLICY_JSON_START\r?\n([\s\S]*?)\r?\nPOLICY_JSON_END/)
       if (jsonBlock) {
         const parsed = JSON.parse(jsonBlock[1])
         policies = Array.isArray(parsed) ? parsed : [parsed]
       }
-    } catch {}
-    try {
-      const ctxBlock = output.match(/CONTEXT_JSON_START\r?\n([\s\S]*?)\r?\nCONTEXT_JSON_END/)
-      if (ctxBlock) context = JSON.parse(ctxBlock[1])
-    } catch {}
-    return { policies, context }
+      return { policies, context: psSession.context }
+    } catch (err) {
+      return { error: err.message }
+    }
   })
 
   ipcMain.handle('policies:create', async (_, options) => {
@@ -389,41 +367,15 @@ try {
 
   const safe = s => String(s || '').replace(/'/g, "''")
 
-  const buildReconnect = (tenantId) => {
-    const tidFlag = tenantId ? `-TenantId '${safe(tenantId)}'` : ''
-    return `$ProgressPreference = 'SilentlyContinue'
-Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
-Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
-try {
-  Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -ContextScope CurrentUser -NoWelcome -Silent ${tidFlag} -ErrorAction Stop
-} catch {
-  $errMsg = $_.Exception.Message
-  if ($errMsg -match 'listener|window handle') {
-    $mgCtx = Get-MgContext -ErrorAction SilentlyContinue
-    if (-not $mgCtx) {
-      Write-Output "ERROR: Session expired - please reload policies to reconnect."
-      exit 1
-    }
-  } else {
-    Write-Output "ERROR: Session expired - please reload policies to reconnect."
-    exit 1
-  }
-}`
-  }
-
   ipcMain.handle('policies:disconnect', async () => {
-    const script = `Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
-try { Disconnect-MgGraph -ErrorAction SilentlyContinue } catch {}
-Write-Output "DISCONNECTED"`
-    await runScript(script, null, null)
+    psSession.kill()
     return { success: true }
   })
 
-  ipcMain.handle('policies:update', async (_, id, patch, tenantId) => {
-    logger.info(`IPC: policies:update id=${id}`)
+  ipcMain.handle('policies:update', async (_, id, patch) => {
     const safeId = safe(id)
     const patchJson = JSON.stringify(patch)
-    const script = `${buildReconnect(tenantId)}
+    const script = `
 try {
   $patchJson = @'
 ${patchJson}
@@ -433,110 +385,69 @@ ${patchJson}
   Write-Output "SUCCESS"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
-}
-`
-    const lines = []
-    const { exitCode } = await runScript(script, (line) => lines.push(line), null)
-    const hasSuccess = lines.some(l => l.trim() === 'SUCCESS')
+}`
+    const output = await psSession.run(script)
+    const lines = output.split('\n')
     const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
-    return { success: hasSuccess || exitCode === 0 }
+    return { success: lines.some(l => l.trim() === 'SUCCESS') }
   })
 
-  ipcMain.handle('policies:delete', async (_, id, tenantId) => {
-    logger.info(`IPC: policies:delete id=${id}`)
+  ipcMain.handle('policies:delete', async (_, id) => {
     const safeId = safe(id)
-    const script = `${buildReconnect(tenantId)}
+    const script = `
 try {
   Remove-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId '${safeId}' -Confirm:$false
   Write-Output "SUCCESS"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
-}
-`
-    const lines = []
-    const { exitCode } = await runScript(script, (line) => lines.push(line), null)
-    const hasSuccess = lines.some(l => l.trim() === 'SUCCESS')
+}`
+    const output = await psSession.run(script)
+    const lines = output.split('\n')
     const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
-    return { success: hasSuccess || exitCode === 0 }
+    return { success: lines.some(l => l.trim() === 'SUCCESS') }
   })
 
-  ipcMain.handle('policies:toggleState', async (_, id, state, tenantId) => {
-    logger.info(`IPC: policies:toggleState id=${id} state=${state}`)
+  ipcMain.handle('policies:toggleState', async (_, id, state) => {
     const safeId = safe(id)
     const safeState = safe(state)
-    const script = `${buildReconnect(tenantId)}
+    const script = `
 try {
   Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body (@{ state = '${safeState}' } | ConvertTo-Json) -ContentType 'application/json'
   Write-Output "SUCCESS"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
-}
-`
-    const lines = []
-    const { exitCode } = await runScript(script, (line) => lines.push(line), null)
-    const hasSuccess = lines.some(l => l.trim() === 'SUCCESS')
+}`
+    const output = await psSession.run(script)
+    const lines = output.split('\n')
     const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
-    return { success: hasSuccess || exitCode === 0 }
+    return { success: lines.some(l => l.trim() === 'SUCCESS') }
   })
 
   // Report: audit CA policies
-  ipcMain.handle('report:audit', async (_, options) => {
-    const { credentials, authMode } = options || {}
-    logger.info(`IPC: report:audit authMode=${authMode}`)
-    const connectBlock = buildConnectGraph(credentials, authMode)
-
-    const script = `
-$ProgressPreference = 'SilentlyContinue'
-$VerbosePreference = 'SilentlyContinue'
-Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
-Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
-Write-Output "CONNECTING: Authenticating..."
-${connectBlock}
-Write-Output "CONNECTED: Reading Conditional Access policies..."
-try {
-  $policies = Get-MgIdentityConditionalAccessPolicy -All
-  $count = @($policies).Count
-  Write-Output "POLICY_JSON_START"
-  $policies | ConvertTo-Json -Depth 10
-  Write-Output "POLICY_JSON_END"
-  Write-Output "DONE: $count policies found"
-} catch {
-  Write-Output "ERROR: $($_.Exception.Message)"
-} finally {
-  try { Disconnect-MgGraph -ErrorAction SilentlyContinue } catch {}
-}
-`
-    const lines = []
-    await runScript(
-      script,
-      (line) => {
-        lines.push(line)
-        win.webContents.send('ps:output', line)
-      },
-      (line) => {
-        win.webContents.send('ps:error', line)
-      }
-    )
-
-    const errorLine = lines.find(l => l.startsWith('ERROR:'))
-    if (errorLine) return { error: errorLine.slice('ERROR:'.length).trim() }
-
-    const startIdx = lines.indexOf('POLICY_JSON_START')
-    const endIdx = lines.indexOf('POLICY_JSON_END')
-    if (startIdx !== -1 && endIdx > startIdx) {
-      try {
+  ipcMain.handle('report:audit', async () => {
+    if (!psSession.alive) return { error: 'No active session — connect a tenant first' }
+    try {
+      const lines = []
+      win.webContents.send('ps:output', 'CONNECTED: Reading Conditional Access policies...')
+      const output = await psSession.run(
+        `$policies = Get-MgIdentityConditionalAccessPolicy -All\n$count = @($policies).Count\nWrite-Output "POLICY_JSON_START"\n$policies | ConvertTo-Json -Depth 10\nWrite-Output "POLICY_JSON_END"\nWrite-Output "DONE: $count policies found"`,
+        (line) => { lines.push(line); win.webContents.send('ps:output', line) },
+        90000
+      )
+      const startIdx = lines.indexOf('POLICY_JSON_START')
+      const endIdx = lines.indexOf('POLICY_JSON_END')
+      if (startIdx !== -1 && endIdx > startIdx) {
         const json = lines.slice(startIdx + 1, endIdx).join('\n')
         const parsed = JSON.parse(json)
         return { policies: Array.isArray(parsed) ? parsed : [parsed] }
-      } catch (err) {
-        return { error: 'Failed to parse policy data: ' + err.message }
       }
+      return { error: 'No data returned' }
+    } catch (err) {
+      return { error: err.message }
     }
-
-    return { error: 'No data returned from PowerShell' }
   })
 
   // App: save PDF

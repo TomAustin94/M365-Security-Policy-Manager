@@ -186,9 +186,11 @@ Write-Output "Connected."`
 Write-Output "Follow the device code prompt below..."
 Connect-MgGraph -UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome -ErrorAction Stop
 Write-Output "Connected."`
+      // Credential mode: use device code with login hint — WAM requires a window handle
+      // unavailable in a subprocess, and -Silent has no cached token to reuse here.
       : `
-Write-Output "Connecting to Microsoft Graph..."
-Connect-MgGraph -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}
+Write-Output "Connecting to Microsoft Graph (device code)..."
+Connect-MgGraph -UseDeviceAuthentication -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint}
 Write-Output "Connected."`
 
     const script = `
@@ -270,8 +272,17 @@ Import-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue
 try {
   Connect-MgGraph -Scopes 'Policy.ReadWrite.ConditionalAccess' -NoWelcome -Silent -ErrorAction Stop
 } catch {
-  Write-Output "ERROR: Session expired - reload policies to sign in again."
-  exit 1
+  $errMsg = $_.Exception.Message
+  if ($errMsg -match 'listener|window handle') {
+    $mgCtx = Get-MgContext -ErrorAction SilentlyContinue
+    if (-not $mgCtx) {
+      Write-Output "ERROR: Session expired - reload policies to sign in again."
+      exit 1
+    }
+  } else {
+    Write-Output "ERROR: Session expired - reload policies to sign in again."
+    exit 1
+  }
 }`
 
   ipcMain.handle('policies:update', async (_, id, patch) => {

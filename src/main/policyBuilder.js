@@ -52,6 +52,19 @@ function needsIpps(p) { return IPPS_IDS.has(p.id) }
 
 function buildConnectGraph(credentials, authMode, opts = {}) {
   const scopes = '"Policy.ReadWrite.ConditionalAccess Policy.Read.All DeviceManagementConfiguration.ReadWrite.All Organization.ReadWrite.All Directory.ReadWrite.All RoleManagement.ReadWrite.Directory AuditLog.Read.All"'
+
+  // When Connect-MgGraph runs inside a console-less subprocess (Electron spawning
+  // pwsh with stdin ignored), MSAL.NET may fail to register a CancelKeyPress event
+  // handler and throw "An error occurred when writing a listener". The connection
+  // itself can still succeed, so we verify via Get-MgContext before giving up.
+  const verifyBlock = `
+    $mgCtx = Get-MgContext -ErrorAction SilentlyContinue
+    if ($mgCtx) {
+        Write-Output "CONNECTED: Microsoft Graph"
+    } else {
+        Write-Output "ERROR: Graph connect failed - $errMsg"; exit 1
+    }`
+
   if (authMode === 'interactive') {
     const tid = credentials?.tenantId ? `-TenantId '${safe(credentials.tenantId)}'` : ''
     // On Windows the caller runs WAM in a visible PS window first; reuse the cached token silently.
@@ -70,19 +83,39 @@ try {
     Connect-MgGraph ${tid} -UseDeviceAuthentication -Scopes ${scopes} -NoWelcome -ErrorAction Stop
     Write-Output "CONNECTED: Microsoft Graph"
 } catch {
-    Write-Output "ERROR: Graph connect failed - $($_.Exception.Message)"; exit 1
+    $errMsg = $_.Exception.Message
+    if ($errMsg -match 'listener') {${verifyBlock}
+    } else {
+        Write-Output "ERROR: Graph connect failed - $errMsg"; exit 1
+    }
 }`
   }
+  const tid = credentials.tenantId ? `-TenantId $mgTid` : ''
   return `
 $mgUser = '${safe(credentials.username)}'
 $mgPass = ConvertTo-SecureString '${safe(credentials.password)}' -AsPlainText -Force
 $mgCred = New-Object System.Management.Automation.PSCredential($mgUser, $mgPass)
 ${credentials.tenantId ? `$mgTid = '${safe(credentials.tenantId)}'` : ''}
 try {
-    Connect-MgGraph ${credentials.tenantId ? '-TenantId $mgTid' : ''} -Credential $mgCred -Scopes ${scopes} -NoWelcome
+    Connect-MgGraph ${tid} -Credential $mgCred -Scopes ${scopes} -NoWelcome -ErrorAction Stop
     Write-Output "CONNECTED: Microsoft Graph"
 } catch {
-    Write-Output "ERROR: Graph connect failed - $($_.Exception.Message)"; exit 1
+    $errMsg = $_.Exception.Message
+    if ($errMsg -match 'listener') {${verifyBlock}
+    } elseif ($errMsg -match 'window handle|WindowHandle') {
+        # MSAL fell back to the Windows broker (WAM) which needs a parent window —
+        # unavailable in a subprocess. Switch to device code flow automatically.
+        Write-Output "INFO: Credential auth requires interactive sign-in - switching to device code flow..."
+        $mgCred = $null; $mgPass = $null
+        try {
+            Connect-MgGraph ${tid} -UseDeviceAuthentication -Scopes ${scopes} -NoWelcome -ErrorAction Stop
+            Write-Output "CONNECTED: Microsoft Graph"
+        } catch {
+            Write-Output "ERROR: Graph connect failed - $($_.Exception.Message)"; exit 1
+        }
+    } else {
+        Write-Output "ERROR: Graph connect failed - $errMsg"; exit 1
+    }
 }
 $mgCred = $null; $mgPass = $null; [System.GC]::Collect()`
 }

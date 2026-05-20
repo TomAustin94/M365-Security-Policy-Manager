@@ -3,7 +3,8 @@
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const PS_PREFS = `$ProgressPreference = 'SilentlyContinue'
-$VerbosePreference = 'SilentlyContinue'`
+$VerbosePreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'`
 
 function safe(s) { return (s || '').replace(/'/g, "''") }
 function psStr(s) { return `'${safe(s)}'` }

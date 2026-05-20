@@ -309,7 +309,7 @@ function registerIpcHandlers(win) {
   })
 
   ipcMain.handle('session:disconnect', async () => {
-    psSession.kill()
+    await psSession.disconnect()
     return { success: true }
   })
 

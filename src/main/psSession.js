@@ -92,7 +92,6 @@ class PersistentPsSession {
     const output = await this._exec(`
 try {
   Write-Output "Connecting to Microsoft Graph..."
-  Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
   Connect-MgGraph -UseDeviceAuthentication -ContextScope CurrentUser -Scopes "Policy.ReadWrite.ConditionalAccess Policy.Read.All" -NoWelcome ${loginHint} -ErrorAction Stop
   $ctx = Get-MgContext
   if ($ctx) {
@@ -114,6 +113,15 @@ try {
     const ctx = JSON.parse(ctxMatch[1])
     this.context = ctx
     return ctx
+  }
+
+  async disconnect() {
+    if (this.alive) {
+      try {
+        await this._exec('Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null', null, 10000)
+      } catch {}
+    }
+    this.kill()
   }
 
   kill() {

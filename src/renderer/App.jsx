@@ -79,15 +79,85 @@ function TenantWidget({ session, onConnect, onSwitch }) {
               <p className="text-xs text-white/35 truncate">Connected</p>
             </div>
           </div>
-          <button onClick={onSwitch} className="text-xs text-gold/70 hover:text-gold transition-colors flex-shrink-0 font-medium">Switch</button>
+          <button
+            onClick={onSwitch}
+            className="text-xs text-amber-400/80 hover:text-amber-300 transition-colors flex-shrink-0 font-medium"
+          >
+            Switch
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
+// ── Switch-tenant confirmation modal ─────────────────────────────────────────
+
+function SwitchTenantModal() {
+  const { switchModalOpen, closeSwitchModal, disconnectSession, tenantSession } = useStore()
+  const [disconnecting, setDisconnecting] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!switchModalOpen) setDisconnecting(false)
+  }, [switchModalOpen])
+
+  const handleConfirm = async () => {
+    setDisconnecting(true)
+    await disconnectSession()
+  }
+
+  if (!switchModalOpen) return null
+
+  return (
+    <Modal open={switchModalOpen} onClose={closeSwitchModal} title="Switch Tenant" size="sm">
+      <div className="space-y-4 py-1">
+        {/* Warning banner */}
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">You will be signed out</p>
+            <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+              Switching tenants will disconnect your current PowerShell session. Any in-progress operations will be cancelled.
+            </p>
+          </div>
+        </div>
+
+        {/* Current session */}
+        {tenantSession && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Currently connected as</p>
+            <p className="text-sm font-semibold text-gray-900">{tenantSession.Account}</p>
+            {tenantSession.TenantId && (
+              <p className="text-xs text-gray-400 font-mono mt-0.5 truncate">{tenantSession.TenantId}</p>
+            )}
+          </div>
+        )}
+
+        <p className="text-sm text-gray-600">
+          After signing out you'll be able to connect to a different tenant.
+        </p>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="secondary" onClick={closeSwitchModal} disabled={disconnecting}>
+            Cancel
+          </Button>
+          <Button
+            variant="amber"
+            onClick={handleConfirm}
+            loading={disconnecting}
+          >
+            {disconnecting ? 'Signing out…' : 'Sign Out & Switch'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function Sidebar({ modules, psStatus }) {
-  const { updateInfo, updaterStatus, showUpdater, tenantSession, openConnectModal } = useStore()
+  const { updateInfo, updaterStatus, showUpdater, tenantSession, openConnectModal, openSwitchModal } = useStore()
   const installed = modules.filter((m) => m.Status === 'up_to_date').length
   const total = modules.length
   const healthStatus = !psStatus?.found
@@ -165,7 +235,7 @@ function Sidebar({ modules, psStatus }) {
         <TenantWidget
           session={tenantSession}
           onConnect={openConnectModal}
-          onSwitch={openConnectModal}
+          onSwitch={openSwitchModal}
         />
 
         <div className="px-4 space-y-3">
@@ -640,6 +710,7 @@ export default function App() {
       </div>
       <FirstRunModal />
       <ConnectModal />
+      <SwitchTenantModal />
       <UpdaterModal />
       <Notifications />
     </Router>

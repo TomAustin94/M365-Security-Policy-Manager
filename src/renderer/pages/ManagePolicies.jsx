@@ -270,7 +270,7 @@ function WamConnect() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ManagePolicies() {
-  const { addNotification, tenantSession, openConnectModal } = useStore()
+  const { addNotification, tenantSession, openConnectModal, openSwitchModal } = useStore()
   const [authMode, setAuthMode] = useState('itglue')
   const [credentials, setCredentials] = useState(null)
   const [connectedAs, setConnectedAs] = useState(null)
@@ -457,7 +457,7 @@ export default function ManagePolicies() {
                   <p className="text-sm font-semibold text-emerald-900">{effectiveSession.Account}</p>
                 </div>
               </div>
-              <Button size="sm" variant="secondary" onClick={tenantSession ? openConnectModal : handleDisconnect}>
+              <Button size="sm" variant="secondary" onClick={tenantSession ? openSwitchModal : handleDisconnect}>
                 Switch Tenant
               </Button>
             </div>

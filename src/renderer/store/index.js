@@ -153,6 +153,15 @@ const useStore = create((set, get) => ({
   openConnectModal: () => set({ connectModalOpen: true }),
   closeConnectModal: () => set({ connectModalOpen: false }),
 
+  switchModalOpen: false,
+  openSwitchModal: () => set({ switchModalOpen: true }),
+  closeSwitchModal: () => set({ switchModalOpen: false }),
+
+  disconnectSession: async () => {
+    try { await window.api?.session?.disconnect() } catch {}
+    set({ tenantSession: null, switchModalOpen: false, connectModalOpen: true })
+  },
+
   sessionCheckDone: false,
   checkExistingSession: async () => {
     if (!window.api?.session) { set({ sessionCheckDone: true }); return }

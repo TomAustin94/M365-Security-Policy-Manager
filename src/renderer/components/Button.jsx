@@ -11,6 +11,7 @@ const variantClasses = {
   secondary: 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-navy',
   ghost: 'bg-transparent text-gray-600 border border-transparent hover:bg-gray-100 hover:text-gray-900 focus:ring-navy',
   danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 border border-transparent',
+  amber: 'bg-amber-600 text-white hover:bg-amber-700 focus:ring-amber-500 border border-transparent',
   gold: 'bg-gold text-white hover:bg-gold-500 focus:ring-gold border border-transparent',
 }
 

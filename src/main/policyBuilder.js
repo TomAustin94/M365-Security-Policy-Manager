@@ -231,9 +231,16 @@ New-MgIdentityConditionalAccessPolicy -BodyParameter $params | Out-Null`
     case 'CA004': return policyBlock(policy.id, policy.name, caPolicy(allUsers(), allApps, grantCompliant))
 
     case 'CA005': return policyBlock(policy.id, policy.name,
-      `$nlParams = @{ '@odata.type' = '#microsoft.graph.countryNamedLocation'; DisplayName = 'United Kingdom (CA005)'; CountriesAndRegions = @('GB'); IncludeUnknownCountriesAndRegions = $false }
-$nl = New-MgIdentityConditionalAccessNamedLocation -BodyParameter $nlParams
-Write-Output "  Created named location: United Kingdom (GB)"
+      `$nlName = 'United Kingdom (CA005)'
+$nl = Get-MgIdentityConditionalAccessNamedLocation -ErrorAction SilentlyContinue | Where-Object { $_.AdditionalProperties.displayName -eq $nlName -or $_.DisplayName -eq $nlName } | Select-Object -First 1
+if ($nl) {
+    Write-Output "  Named location '$nlName' already exists — reusing it"
+} else {
+    $nlParams = @{ '@odata.type' = '#microsoft.graph.countryNamedLocation'; DisplayName = $nlName; CountriesAndRegions = @('GB'); IncludeUnknownCountriesAndRegions = $false }
+    $nl = New-MgIdentityConditionalAccessNamedLocation -BodyParameter $nlParams
+    Write-Output "  Created named location: $nlName"
+}
+Write-Output "  Using named location ID: $($nl.Id)"
 $params = @{
     DisplayName = ${psStr(displayName)}; State = ${psStr(state)}
     Conditions = @{ Users = ${allUsers()}; Applications = ${allApps}; Locations = @{ IncludeLocations = @('All'); ExcludeLocations = @($nl.Id) } }
@@ -320,9 +327,21 @@ New-MgIdentityConditionalAccessPolicy -BodyParameter $params | Out-Null`)
       const ranges = (config.ipRanges || '').split(',').map(s => s.trim()).filter(Boolean)
       if (!ranges.length) return skipBlock(policy.id, policy.name, 'No IP ranges provided. Add IP ranges in the Configure step.')
       const rangesPs = ranges.map(r => `@{ '@odata.type' = '#microsoft.graph.iPv4CidrRange'; CidrAddress = '${safe(r)}' }`).join(', ')
+      const nlName = config.locationName || 'Corporate Office IPs'
       return policyBlock(policy.id, policy.name,
-        `$nlParams = @{ '@odata.type' = '#microsoft.graph.ipNamedLocation'; DisplayName = ${psStr(config.locationName || 'Corporate Office IPs')}; IsTrusted = $true; IpRanges = @(${rangesPs}) }
-New-MgIdentityConditionalAccessNamedLocation -BodyParameter $nlParams | Out-Null`)
+        `$nlName = ${psStr(nlName)}
+$nl = Get-MgIdentityConditionalAccessNamedLocation -ErrorAction SilentlyContinue | Where-Object { $_.AdditionalProperties.displayName -eq $nlName -or $_.DisplayName -eq $nlName } | Select-Object -First 1
+if ($nl) {
+    Write-Output "  Named location '$nlName' already exists — updating IP ranges"
+    $nlParams = @{ IsTrusted = $true; IpRanges = @(${rangesPs}) }
+    Update-MgIdentityConditionalAccessNamedLocation -NamedLocationId $nl.Id -BodyParameter $nlParams
+    Write-Output "  Updated named location: $nlName"
+} else {
+    $nlParams = @{ '@odata.type' = '#microsoft.graph.ipNamedLocation'; DisplayName = $nlName; IsTrusted = $true; IpRanges = @(${rangesPs}) }
+    $nl = New-MgIdentityConditionalAccessNamedLocation -BodyParameter $nlParams
+    Write-Output "  Created named location: $nlName"
+}
+Write-Output "  Named location ID: $($nl.Id)"`)
     }
 
     case 'CA030': return policyBlock(policy.id, policy.name,

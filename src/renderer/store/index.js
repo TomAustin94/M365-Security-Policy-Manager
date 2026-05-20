@@ -144,6 +144,23 @@ const useStore = create((set, get) => ({
   triggerInstall: () => window.api?.updater?.install(),
   dismissUpdater: () => set({ updaterStatus: 'idle', updaterError: null }),
 
+  // ── Tenant Session ────────────────────────────────────────────────────────────
+  tenantSession: null,  // { Account, TenantId } | null
+  setTenantSession: (session) => set({ tenantSession: session }),
+  clearTenantSession: () => set({ tenantSession: null }),
+
+  connectModalOpen: false,
+  openConnectModal: () => set({ connectModalOpen: true }),
+  closeConnectModal: () => set({ connectModalOpen: false }),
+
+  sessionCheckDone: false,
+  checkExistingSession: async () => {
+    if (!window.api?.session) { set({ sessionCheckDone: true }); return }
+    const ctx = await window.api.session.getContext()
+    if (ctx) set({ tenantSession: ctx })
+    set({ sessionCheckDone: true })
+  },
+
   // ── First Run ─────────────────────────────────────────────────────────────
   firstRun: false,
   setFirstRun: (firstRun) => set({ firstRun }),

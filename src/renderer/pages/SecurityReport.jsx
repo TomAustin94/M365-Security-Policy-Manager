@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import useStore from '../store'
 import Button from '../components/Button'
 
@@ -125,52 +125,83 @@ function formatSessionControls(sc) {
   return parts
 }
 
-// ── Console component (live PS output) ───────────────────────────────────────
+// ── Progress UI for report generation ────────────────────────────────────────
 
-function lineColor(line) {
-  if (/^error:/i.test(line)) return '#f87171'           // red
-  if (/^success/i.test(line)) return '#4ade80'          // green
-  if (/^connect/i.test(line) || /connecting/i.test(line)) return '#fbbf24' // amber
-  if (/^done:/i.test(line)) return '#4ade80'            // green
-  return '#9ca3af'                                       // gray
-}
+function GeneratingView({ orgName }) {
+  const [phase, setPhase] = useState(0)
 
-function LiveConsole({ lines, status, orgName }) {
-  const bottomRef = useRef(null)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [lines])
+    const t1 = setTimeout(() => setPhase(1), 1800)
+    const t2 = setTimeout(() => setPhase(2), 3500)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
+
+  const steps = [
+    { label: 'Connected to Microsoft Graph', done: true },
+    { label: 'Fetching Conditional Access policies', active: phase === 0, done: phase > 0 },
+    { label: 'Processing policy data', active: phase === 1, done: phase > 1 },
+    { label: 'Building report', active: phase === 2, done: false },
+  ]
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#0f1117' }}>
-      {/* Console header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-white/5">
-        {status === 'running' && (
-          <svg className="w-4 h-4 animate-spin flex-shrink-0" viewBox="0 0 24 24" fill="none" style={{ color: '#60a5fa' }}>
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+    <div className="flex flex-col items-center justify-center h-full gap-10 px-8">
+      {/* Animated shield icon */}
+      <div className="relative">
+        <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: '#f0f4f8' }}>
+          <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="#1a2d4a" strokeWidth={1.4}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+          </svg>
+        </div>
+        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#1a2d4a' }}>
+          <svg className="w-3 h-3 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
             <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
           </svg>
-        )}
-        {status === 'done' && (
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-        <span className="text-xs font-mono" style={{ color: '#9ca3af' }}>
-          {status === 'running' ? `Fetching policies${orgName ? ` — ${orgName}` : ''}...` : 'Session complete'}
-        </span>
-        <span className="ml-auto text-xs font-mono" style={{ color: '#4b5563' }}>{lines.length} lines</span>
+        </div>
       </div>
 
-      {/* Output */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 font-mono text-xs leading-relaxed space-y-0.5">
-        {lines.length === 0 && status === 'running' && (
-          <span style={{ color: '#4b5563' }}>Waiting for output...</span>
-        )}
-        {lines.map((line, i) => (
-          <div key={i} style={{ color: lineColor(line) }}>{line}</div>
+      <div className="w-full max-w-xs space-y-1">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-4">
+          {orgName ? `Auditing ${orgName}` : 'Generating report'}
+        </p>
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-3 py-1.5">
+            <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
+              {step.done ? (
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: '#dcfce7' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="#16a34a" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              ) : step.active ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" style={{ color: '#1a2d4a' }}>
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.2" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <div className="w-5 h-5 rounded-full border-2 border-gray-200" />
+              )}
+            </div>
+            <span className={`text-sm leading-snug ${
+              step.done ? 'text-gray-400 line-through' :
+              step.active ? 'text-gray-900 font-medium' :
+              'text-gray-300'
+            }`}>
+              {step.label}
+            </span>
+          </div>
         ))}
-        <div ref={bottomRef} />
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full max-w-xs">
+        <div className="h-1 rounded-full bg-gray-100 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700 ease-out"
+            style={{ width: `${[25, 60, 85, 100][phase]}%`, background: '#1a2d4a' }}
+          />
+        </div>
+        <p className="text-xs text-gray-400 text-center mt-2">This may take a moment for large tenants</p>
       </div>
     </div>
   )
@@ -397,8 +428,7 @@ function AffinityReportHeader({ orgName, date }) {
 
 // ── Report view ───────────────────────────────────────────────────────────────
 
-function ReportView({ orgName, tenantPolicies, date, logs }) {
-  const [showConsole, setShowConsole] = useState(false)
+function ReportView({ orgName, tenantPolicies, date }) {
   const [saving, setSaving] = useState(false)
   const [savedPath, setSavedPath] = useState(null)
   const enabled = tenantPolicies.filter(p => pick(p, 'State', 'state') === 'enabled').length
@@ -408,26 +438,17 @@ function ReportView({ orgName, tenantPolicies, date, logs }) {
   async function handleExportPDF() {
     setSaving(true)
     setSavedPath(null)
-    const style = document.createElement('style')
-    style.textContent = [
-      '@media print {',
-      '  @page { margin: 12mm; size: A4 portrait; }',
-      '  body * { visibility: hidden !important; }',
-      '  #report-printable, #report-printable * { visibility: visible !important; }',
-      '  #report-printable { position: fixed; top: 0; left: 0; width: 100%; }',
-      '  .no-print { display: none !important; }',
-      '}',
-    ].join('\n')
-    document.head.appendChild(style)
     try {
-      const result = await window.api.report.savePDF(orgName)
+      const result = await window.api.report.savePDF(orgName, tenantPolicies)
       if (result?.path) {
         setSavedPath(result.path)
-        setTimeout(() => setSavedPath(null), 5000)
+        setTimeout(() => setSavedPath(null), 6000)
+      } else if (result?.cancelled) {
+        // user cancelled dialog — no-op
       }
-    } catch {}
-    finally {
-      document.head.removeChild(style)
+    } catch (e) {
+      // swallow
+    } finally {
       setSaving(false)
     }
   }
@@ -446,17 +467,6 @@ function ReportView({ orgName, tenantPolicies, date, logs }) {
         <div className="ml-auto flex items-center gap-2">
           {savedPath && (
             <span className="text-xs text-emerald-600 font-medium">Saved to Documents</span>
-          )}
-          {logs?.length > 0 && (
-            <button
-              onClick={() => setShowConsole(s => !s)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${showConsole ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {showConsole ? 'Hide log' : 'Show log'}
-            </button>
           )}
           <Button variant="secondary" onClick={handleExportPDF} loading={saving}>
             {savedPath ? (
@@ -477,13 +487,6 @@ function ReportView({ orgName, tenantPolicies, date, logs }) {
           </Button>
         </div>
       </div>
-
-      {/* Console panel (collapsible) */}
-      {showConsole && logs?.length > 0 && (
-        <div className="flex-shrink-0 h-40 border-b border-gray-200">
-          <LiveConsole lines={logs} status="done" orgName={orgName} />
-        </div>
-      )}
 
       {/* Report content */}
       <div id="report-printable" className="flex-1 overflow-y-auto px-6 py-5"
@@ -530,155 +533,6 @@ function ReportView({ orgName, tenantPolicies, date, logs }) {
   )
 }
 
-// ── Auth panel ────────────────────────────────────────────────────────────────
-
-function ItGluePanel({ org, setOrg, credentials, setCredentials }) {
-  const { orgs, orgsLoading, loadOrgs, settings } = useStore()
-  const [passwords, setPasswords] = useState([])
-  const [allPasswords, setAllPasswords] = useState([])
-  const [pwLoading, setPwLoading] = useState(false)
-  const [search, setSearch] = useState('')
-  const [selectedPwId, setSelectedPwId] = useState(null)
-
-  useEffect(() => { if (settings.itGlueApiKey) loadOrgs() }, [])
-
-  useEffect(() => {
-    if (!org || org.id === 'manual' || !window.api) return
-    setPwLoading(true)
-    window.api.itglue.getPasswords(org.id)
-      .then((res) => {
-        const all = res || []
-        setAllPasswords(all)
-        const exclusionWords = ['recovery', 'break glass', 'breakglass', 'emergency', 'backup']
-        setPasswords(all.filter((pw) => {
-          const n = pw.name.toLowerCase()
-          return (n.includes('365') || n.includes('global admin') || n.includes('globaladmin'))
-            && !exclusionWords.some(ex => n.includes(ex))
-        }))
-      })
-      .catch(() => { setPasswords([]); setAllPasswords([]) })
-      .finally(() => setPwLoading(false))
-  }, [org?.id])
-
-  if (!settings.itGlueApiKey) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <p className="text-xs font-semibold text-amber-800 mb-0.5">IT Glue not configured</p>
-        <p className="text-xs text-amber-700">Add your IT Glue API key in Settings.</p>
-      </div>
-    )
-  }
-
-  const filteredOrgs = orgs.filter(o =>
-    o.name.toLowerCase().includes(search.toLowerCase()) ||
-    (o.shortName || '').toLowerCase().includes(search.toLowerCase())
-  )
-  const hiddenCount = allPasswords.length - passwords.length
-
-  return (
-    <div className="space-y-4">
-      {/* Org search */}
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Organisation</label>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search organisations..."
-          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-        />
-        <div className="mt-1.5 max-h-36 overflow-y-auto space-y-1">
-          {orgsLoading ? (
-            Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-8 bg-gray-100 rounded-lg animate-pulse" />
-            ))
-          ) : filteredOrgs.length === 0 ? (
-            <p className="text-xs text-gray-400 py-2 text-center">No organisations found</p>
-          ) : filteredOrgs.map(o => (
-            <button
-              key={o.id}
-              onClick={() => { setOrg(o); setCredentials(null); setSelectedPwId(null) }}
-              className={[
-                'w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs transition-all',
-                org?.id === o.id
-                  ? 'border-navy bg-navy text-white font-medium'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700',
-              ].join(' ')}
-            >
-              <span>{o.name}</span>
-              {o.shortName && <span className="opacity-60 text-xs">{o.shortName}</span>}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Credential picker */}
-      {org && (
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Credential</label>
-          {pwLoading ? (
-            Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse mb-1" />
-            ))
-          ) : passwords.length === 0 ? (
-            <p className="text-xs text-gray-400 py-2 text-center">No 365 / Global Admin credentials found</p>
-          ) : (
-            <div className="max-h-36 overflow-y-auto space-y-1">
-              {passwords.map(pw => (
-                <button
-                  key={pw.id}
-                  onClick={() => { setSelectedPwId(pw.id); setCredentials({ username: pw.username, password: pw.password, tenantId: '' }) }}
-                  className={[
-                    'w-full px-3 py-2 rounded-lg border text-left text-xs transition-all',
-                    selectedPwId === pw.id
-                      ? 'border-navy bg-navy text-white font-medium'
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
-                  ].join(' ')}
-                >
-                  <p className={`font-medium ${selectedPwId === pw.id ? 'text-white' : 'text-gray-800'}`}>{pw.name}</p>
-                  <p className={`mt-0.5 ${selectedPwId === pw.id ? 'text-white/70' : 'text-gray-500'}`}>{pw.username}</p>
-                </button>
-              ))}
-            </div>
-          )}
-          {hiddenCount > 0 && (
-            <p className="mt-1.5 text-xs text-gray-400 italic">
-              {hiddenCount} password{hiddenCount !== 1 ? 's' : ''} hidden (recovery / break-glass)
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function InteractivePanel({ org, setOrg, setCredentials }) {
-  useEffect(() => {
-    setCredentials({ interactive: true, username: '', password: '', tenantId: '' })
-  }, [])
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Organisation name</label>
-        <input
-          type="text"
-          value={org?.name || ''}
-          onChange={e => setOrg({ id: 'manual', name: e.target.value, shortName: '' })}
-          placeholder="e.g. AffinityIT"
-          className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-        />
-      </div>
-      <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5">
-        <p className="text-xs font-semibold text-blue-700 mb-0.5">Device code login</p>
-        <p className="text-xs text-blue-600 leading-relaxed">
-          A device code will appear in the output. Visit <span className="font-medium">microsoft.com/devicelogin</span> and enter it to authenticate.
-        </p>
-      </div>
-    </div>
-  )
-}
-
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
@@ -700,48 +554,34 @@ function EmptyState() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function SecurityReport() {
-  const [authMode, setAuthMode] = useState('itglue')
-  const [org, setOrg] = useState(null)
-  const [credentials, setCredentials] = useState(null)
+  const { tenantSession, openConnectModal } = useStore()
+  const [orgName, setOrgName] = useState('')
   const [status, setStatus] = useState('idle')
-  const [logs, setLogs] = useState([])
   const [report, setReport] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
 
-  const canGenerate = useCallback(() => {
-    if (!org?.name) return false
-    if (authMode === 'itglue' && !credentials) return false
-    return true
-  }, [org, authMode, credentials])
-
-  function handleAuthModeChange(mode) {
-    setAuthMode(mode)
-    setCredentials(null)
-    if (mode === 'interactive') setOrg(prev => prev?.id === 'manual' ? prev : null)
-  }
+  useEffect(() => {
+    if (tenantSession?.Account && !orgName) {
+      const domain = tenantSession.Account.split('@')[1]?.split('.')[0] || ''
+      setOrgName(domain)
+    }
+  }, [tenantSession])
 
   async function handleGenerate() {
-    if (!canGenerate()) return
+    if (!tenantSession) return
     setStatus('running')
-    setLogs([])
     setReport(null)
     setErrorMsg('')
 
-    const unsub = window.api?.onPsOutput?.((line) => setLogs(prev => [...prev, line]))
-
     try {
-      const result = await window.api.report.audit({
-        credentials,
-        authMode,
-      })
-
+      const result = await window.api.report.audit()
       if (result.error) {
         setErrorMsg(result.error)
         setStatus('error')
       } else {
         setReport({
           policies: result.policies,
-          orgName: org?.name || '',
+          orgName: orgName || tenantSession?.Account || '',
           date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
         })
         setStatus('done')
@@ -749,8 +589,6 @@ export default function SecurityReport() {
     } catch (err) {
       setErrorMsg(err.message || 'Unknown error')
       setStatus('error')
-    } finally {
-      unsub?.()
     }
   }
 
@@ -764,33 +602,43 @@ export default function SecurityReport() {
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-bold text-gray-800">Security Report</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Full CA policy inventory for any tenant</p>
+          <p className="text-xs text-gray-400 mt-0.5">Full CA policy inventory for the connected tenant</p>
         </div>
 
-        {/* Auth mode tabs */}
-        <div className="px-5 pt-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Authentication</p>
-          <div className="flex gap-1.5 p-1 bg-gray-100 rounded-lg mb-4">
-            {[{ id: 'itglue', label: 'IT Glue' }, { id: 'interactive', label: 'Interactive' }].map((m) => (
-              <button
-                key={m.id}
-                onClick={() => handleAuthModeChange(m.id)}
-                className={[
-                  'flex-1 py-1.5 px-2 rounded-md text-xs font-semibold transition-all',
-                  authMode === m.id
-                    ? 'bg-white text-navy shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700',
-                ].join(' ')}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+        <div className="px-5 pt-4 space-y-4">
+          {tenantSession ? (
+            <>
+              {/* Connected tenant info */}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                  <p className="text-xs font-semibold text-emerald-700">Connected</p>
+                </div>
+                <p className="text-xs text-emerald-800 truncate pl-3.5">{tenantSession.Account}</p>
+              </div>
 
-          {authMode === 'itglue' ? (
-            <ItGluePanel org={org} setOrg={setOrg} credentials={credentials} setCredentials={setCredentials} />
+              {/* Org name for report */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Report label (org name)</label>
+                <input
+                  type="text"
+                  value={orgName}
+                  onChange={e => setOrgName(e.target.value)}
+                  placeholder="e.g. Contoso"
+                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                />
+              </div>
+            </>
           ) : (
-            <InteractivePanel org={org} setOrg={setOrg} credentials={credentials} setCredentials={setCredentials} />
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center space-y-3">
+              <p className="text-xs text-gray-500">Connect a tenant to generate a security report.</p>
+              <button
+                onClick={openConnectModal}
+                className="w-full py-1.5 rounded-md bg-navy text-white text-xs font-semibold hover:bg-navy/90 transition-colors"
+              >
+                Connect Tenant
+              </button>
+            </div>
           )}
         </div>
 
@@ -808,7 +656,7 @@ export default function SecurityReport() {
           <Button
             variant="primary"
             className="w-full"
-            disabled={!canGenerate() || isRunning}
+            disabled={!tenantSession || isRunning}
             onClick={handleGenerate}
           >
             {isRunning ? (
@@ -827,13 +675,12 @@ export default function SecurityReport() {
       {/* ── Right area ── */}
       <main className="flex-1 overflow-hidden bg-gray-50">
         {isRunning ? (
-          <LiveConsole lines={logs} status="running" orgName={org?.name} />
+          <GeneratingView orgName={orgName || tenantSession?.Account} />
         ) : isDone ? (
           <ReportView
             orgName={report.orgName}
             tenantPolicies={report.policies}
             date={report.date}
-            logs={logs}
           />
         ) : (
           <EmptyState />

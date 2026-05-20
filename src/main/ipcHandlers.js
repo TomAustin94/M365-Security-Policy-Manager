@@ -2,7 +2,7 @@ const { ipcMain, app, shell, dialog, BrowserWindow } = require('electron')
 const { checkPowerShell, runScript } = require('./powershell')
 const { getModuleStatus, installModules, updateModules } = require('./moduleManager')
 const itGlue = require('./itGlue')
-const { buildScript, buildConnectGraph } = require('./policyBuilder')
+const { buildScript, buildConnectGraph, buildPoliciesScript, needsExo, needsIpps } = require('./policyBuilder')
 const store = require('./store')
 const logger = require('./logger')
 const path = require('path')
@@ -348,28 +348,43 @@ function registerIpcHandlers(win) {
 
   ipcMain.handle('policies:create', async (_, options) => {
     const { policies, credentials, prefix, authMode, policyConfigs, useDeviceCode } = options
-    logger.info(`IPC: policies:create count=${policies?.length} authMode=${authMode} prefix=${prefix}`)
-    const script = buildScript(policies, credentials, prefix, authMode, policyConfigs || {}, { useDeviceCode })
+    logger.info(`IPC: policies:create count=${policies?.length} authMode=${authMode} prefix=${prefix} session=${psSession.alive}`)
+
     const logs = []
     const results = {}
 
+    const onLine = (line) => {
+      logs.push(line)
+      win.webContents.send('ps:output', line)
+      if (line.startsWith('SUCCESS:')) {
+        const id = line.match(/[A-Z]{2}\d{3}/)?.[0]
+        if (id) results[id] = 'success'
+      } else if (line.startsWith('FAILURE:')) {
+        const id = line.match(/[A-Z]{2}\d{3}/)?.[0]
+        if (id) results[id] = 'failure'
+      }
+    }
+
+    const hasExo  = policies.some(p => needsExo(p))
+    const hasIpps = policies.some(p => needsIpps(p))
+
+    // If a persistent authenticated session exists and no EXO/IPPS connections are
+    // needed, run the policy blocks directly through the session — no re-auth required.
+    if (psSession.alive && !hasExo && !hasIpps) {
+      logger.info('IPC: policies:create — using persistent session (no re-auth)')
+      win.webContents.send('ps:output', 'CONNECTED: Using active tenant session — deploying policies...')
+      const script = buildPoliciesScript(policies, prefix || '', policyConfigs || {})
+      await psSession.run(script, onLine, 300000)
+      return { logs, results }
+    }
+
+    // Fall back to a new process with full auth (EXO/IPPS policies, or no session)
+    logger.info('IPC: policies:create — spawning new process with full auth')
+    const script = buildScript(policies, credentials, prefix, authMode, policyConfigs || {}, { useDeviceCode })
     await runScript(
       script,
-      (line) => {
-        logs.push(line)
-        win.webContents.send('ps:output', line)
-
-        if (line.startsWith('SUCCESS:')) {
-          const id = line.match(/[A-Z]{2}\d{3}/)?.[0]
-          if (id) results[id] = 'success'
-        } else if (line.startsWith('FAILURE:')) {
-          const id = line.match(/[A-Z]{2}\d{3}/)?.[0]
-          if (id) results[id] = 'failure'
-        }
-      },
-      (line) => {
-        win.webContents.send('ps:error', line)
-      }
+      onLine,
+      (line) => win.webContents.send('ps:error', line)
     )
 
     return { logs, results }

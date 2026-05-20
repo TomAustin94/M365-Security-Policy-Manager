@@ -923,4 +923,14 @@ function buildScript(policies, credentials, prefix, authMode = 'interactive', po
   return parts.join('\n')
 }
 
-module.exports = { buildScript, buildConnectGraph }
+// Builds only the policy creation blocks — no auth, no module imports, no disconnect.
+// Used when running through an already-authenticated persistent session.
+function buildPoliciesScript(policies, prefix, policyConfigs = {}) {
+  const parts = [PS_PREFS, '']
+  for (const policy of policies) {
+    parts.push(buildPolicyScript(policy, policyConfigs[policy.id] || {}, prefix))
+  }
+  return parts.join('\n')
+}
+
+module.exports = { buildScript, buildConnectGraph, buildPoliciesScript, needsExo, needsIpps }

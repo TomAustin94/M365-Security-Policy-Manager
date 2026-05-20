@@ -2,7 +2,62 @@ import React, { useState, useEffect } from 'react'
 import useStore from '../store'
 import Card from '../components/Card'
 import Button from '../components/Button'
-import Badge from '../components/Badge'
+
+function UpdateChecker() {
+  const { updaterStatus, updaterInfo, showUpdater, triggerCheck } = useStore()
+  const [appVersion, setAppVersion] = useState(null)
+
+  useEffect(() => {
+    window.api?.app?.getVersion?.().then(setAppVersion)
+  }, [])
+
+  const isChecking = updaterStatus === 'checking'
+  const isDownloaded = updaterStatus === 'downloaded'
+  const isAvailable = updaterStatus === 'available' || updaterInfo
+
+  return (
+    <Card>
+      <Card.Header>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          </div>
+          <h2 className="text-sm font-semibold text-gray-900">About &amp; Updates</h2>
+        </div>
+      </Card.Header>
+      <Card.Body className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-700">M365 Security Policy Manager</p>
+            <p className="text-xs text-gray-500 mt-0.5">Version {appVersion ?? '…'}</p>
+          </div>
+          {isDownloaded ? (
+            <Button variant="primary" size="sm" onClick={showUpdater}>Restart to update</Button>
+          ) : isAvailable ? (
+            <Button variant="secondary" size="sm" onClick={showUpdater}>Update available</Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={triggerCheck}
+              loading={isChecking}
+              disabled={isChecking}
+            >
+              {isChecking ? 'Checking…' : 'Check for updates'}
+            </Button>
+          )}
+        </div>
+        {updaterStatus === 'error' && (
+          <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+            Update check failed — check your internet connection or try again later.
+          </div>
+        )}
+      </Card.Body>
+    </Card>
+  )
+}
 
 const EXECUTION_POLICIES = ['Restricted', 'AllSigned', 'RemoteSigned', 'Unrestricted', 'Bypass']
 
@@ -235,6 +290,9 @@ export default function Settings() {
             </FormGroup>
           </Card.Body>
         </Card>
+
+        {/* About & Updates */}
+        <UpdateChecker />
 
         {/* Save button */}
         <div className="flex justify-end">

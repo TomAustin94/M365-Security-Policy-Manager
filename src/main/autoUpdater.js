@@ -2,9 +2,18 @@ const { autoUpdater } = require('electron-updater')
 const { ipcMain } = require('electron')
 
 function setupAutoUpdater(win, isDev) {
+  const send = (channel, payload) => {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+
   // electron-updater requires a packaged app to function — skip in dev
   if (isDev) {
-    ipcMain.handle('updater:check', () => ({ devMode: true }))
+    ipcMain.handle('updater:check', async () => {
+      send('updater:checking')
+      await new Promise(r => setTimeout(r, 800))
+      send('updater:not-available')
+      return { devMode: true }
+    })
     ipcMain.handle('updater:download', () => {})
     ipcMain.handle('updater:install', () => {})
     return
@@ -13,10 +22,6 @@ function setupAutoUpdater(win, isDev) {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowPrerelease = false
-
-  const send = (channel, payload) => {
-    if (!win.isDestroyed()) win.webContents.send(channel, payload)
-  }
 
   autoUpdater.on('checking-for-update', () => send('updater:checking'))
 

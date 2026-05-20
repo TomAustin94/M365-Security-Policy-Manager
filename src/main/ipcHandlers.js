@@ -687,6 +687,22 @@ try {
       const parsed = JSON.parse(json)
       const policies = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : [])
 
+      // Fetch tenant display name
+      let tenantName = null
+      try {
+        const orgLines = []
+        await psSession.run(
+          `try {
+  $org = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/organization?`$select=displayName" -ErrorAction SilentlyContinue
+  if ($org -and $org.value -and $org.value.Count -gt 0) { Write-Output "TENANT_NAME:$($org.value[0].displayName)" }
+} catch {}`,
+          (line) => orgLines.push(line),
+          15000
+        )
+        const nameLine = orgLines.find(l => l.startsWith('TENANT_NAME:'))
+        if (nameLine) tenantName = nameLine.slice('TENANT_NAME:'.length).trim()
+      } catch { /* best-effort */ }
+
       // Resolve display names for all excluded users, groups, and roles
       const SPECIAL_IDS = new Set(['All', 'None', 'GuestsOrExternalUsers', 'AllTrusted'])
       const excUserIds  = [...new Set(policies.flatMap(p => (p?.Conditions?.Users?.ExcludeUsers || p?.conditions?.users?.excludeUsers || []).filter(id => !SPECIAL_IDS.has(id))))]
@@ -739,7 +755,7 @@ Write-Output "NAME_MAP_END"`,
         } catch { /* name resolution is best-effort */ }
       }
 
-      return { policies, nameMap }
+      return { policies, nameMap, tenantName }
     } catch (err) {
       return { error: err.message }
     }

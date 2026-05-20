@@ -582,7 +582,7 @@ export default function SecurityReport() {
         setReport({
           policies: result.policies,
           nameMap: result.nameMap || {},
-          orgName: orgName || tenantSession?.Account || '',
+          orgName: result.tenantName || orgName || tenantSession?.Account || '',
           date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
         })
         setStatus('done')

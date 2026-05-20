@@ -696,17 +696,37 @@ try {
       let nameMap = {}
       if (excUserIds.length || excGroupIds.length || excRoleIds.length) {
         try {
-          const userIdsSafe  = excUserIds.map(id => id.replace(/'/g, "''")),
-                groupIdsSafe = excGroupIds.map(id => id.replace(/'/g, "''")),
-                roleIdsSafe  = excRoleIds.map(id => id.replace(/'/g, "''"))
+          const userBlocks = excUserIds.map(id => {
+            const safe = id.replace(/'/g, "''")
+            return `try {
+  $u = Get-MgUser -UserId '${safe}' -Property DisplayName,UserPrincipalName -ErrorAction SilentlyContinue
+  if ($u) {
+    $nameMap['${safe}'] = if ($u.UserPrincipalName) { "$($u.DisplayName) ($($u.UserPrincipalName))" } else { $u.DisplayName }
+  }
+} catch {}`
+          })
+          const groupBlocks = excGroupIds.map(id => {
+            const safe = id.replace(/'/g, "''")
+            return `try {
+  $g = Get-MgGroup -GroupId '${safe}' -Property DisplayName -ErrorAction SilentlyContinue
+  if ($g) { $nameMap['${safe}'] = $g.DisplayName }
+} catch {}`
+          })
+          const roleBlocks = excRoleIds.map(id => {
+            const safe = id.replace(/'/g, "''")
+            return `try {
+  $r = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId '${safe}' -Property DisplayName -ErrorAction SilentlyContinue
+  if ($r) { $nameMap['${safe}'] = $r.DisplayName }
+} catch {}`
+          })
+
           const nameLines = []
           await psSession.run(
-            `$nameMap = @{}
-${userIdsSafe.map(id => `try { $u = Get-MgUser -UserId '${id}' -Select DisplayName,UserPrincipalName -ErrorAction SilentlyContinue; if ($u) { $nameMap['${id}'] = if ($u.UserPrincipalName) { "$($u.DisplayName) ($($u.UserPrincipalName))" } else { $u.DisplayName } } } catch {}`).join('\n')}
-${groupIdsSafe.map(id => `try { $g = Get-MgGroup -GroupId '${id}' -Select DisplayName -ErrorAction SilentlyContinue; if ($g) { $nameMap['${id}'] = $g.DisplayName } } catch {}`).join('\n')}
-${roleIdsSafe.map(id => `try { $r = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId '${id}' -Select DisplayName -ErrorAction SilentlyContinue; if ($r) { $nameMap['${id}'] = $r.DisplayName } } catch {}`).join('\n')}
+            `$ProgressPreference = 'SilentlyContinue'
+$nameMap = @{}
+${[...userBlocks, ...groupBlocks, ...roleBlocks].join('\n')}
 Write-Output "NAME_MAP_START"
-$nameMap | ConvertTo-Json -Compress
+if ($nameMap.Count -gt 0) { $nameMap | ConvertTo-Json -Compress } else { Write-Output "{}" }
 Write-Output "NAME_MAP_END"`,
             (line) => nameLines.push(line),
             60000

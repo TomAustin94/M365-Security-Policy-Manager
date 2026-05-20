@@ -49,8 +49,8 @@ class PersistentPsSession {
 
     // Bootstrap - load modules
     await this._exec(
-      `$ProgressPreference='SilentlyContinue'\n$VerbosePreference='SilentlyContinue'\nImport-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue\nImport-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue\n`,
-      null, 30000
+      `$ProgressPreference='SilentlyContinue'\n$VerbosePreference='SilentlyContinue'\nImport-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue\nImport-Module Microsoft.Graph.Identity.SignIns -ErrorAction SilentlyContinue\nImport-Module Microsoft.Graph.Users -ErrorAction SilentlyContinue\nImport-Module Microsoft.Graph.Groups -ErrorAction SilentlyContinue\nImport-Module Microsoft.Graph.Identity.DirectoryManagement -ErrorAction SilentlyContinue\n`,
+      null, 45000
     )
   }
 

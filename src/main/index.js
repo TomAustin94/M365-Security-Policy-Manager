@@ -3,6 +3,7 @@ const path = require('path')
 const { registerIpcHandlers } = require('./ipcHandlers')
 const { setupAutoUpdater } = require('./autoUpdater')
 const logger = require('./logger')
+const psSession = require('./psSession')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -47,4 +48,18 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Disconnect the Graph session on close so the token cache is cleared and the
+// next launch always starts a fresh login rather than reusing a cached token.
+let _quitting = false
+app.on('before-quit', (e) => {
+  if (_quitting || !psSession.alive) return
+  e.preventDefault()
+  _quitting = true
+  logger.info('App closing — disconnecting Graph session')
+  Promise.race([
+    psSession.disconnect(),
+    new Promise(r => setTimeout(r, 3000)),
+  ]).catch(() => {}).finally(() => app.quit())
 })

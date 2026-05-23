@@ -131,6 +131,63 @@ function formatSessionControls(sc) {
 
 const _POLICY_MAP = Object.fromEntries(POLICIES.map(p => [p.id, p]))
 
+// Configuration-based matchers for baseline CA policies.
+// Checks the actual Graph API policy object so policies created outside this
+// tool (e.g. "Require multifactor authentication for all users") are detected
+// by what they DO rather than their display name.
+const _pv = (obj, ...keys) => { for (const k of keys) { if (obj?.[k] != null) return obj[k] } return null }
+const _controls = (p) => _pv(_pv(p, 'GrantControls', 'grantControls'), 'BuiltInControls', 'builtInControls') || []
+const _cond = (p) => _pv(p, 'Conditions', 'conditions') || {}
+const _users = (p) => _pv(_cond(p), 'Users', 'users') || {}
+const _apps = (p) => _pv(_cond(p), 'Applications', 'applications') || {}
+const _platforms = (p) => (_pv(_pv(_cond(p), 'Platforms', 'platforms'), 'IncludePlatforms', 'includePlatforms') || []).map(x => x.toLowerCase())
+const _clientApps = (p) => (_pv(_cond(p), 'ClientAppTypes', 'clientAppTypes') || []).map(x => x.toLowerCase())
+const _signInRisk = (p) => (_pv(_cond(p), 'SignInRiskLevels', 'signInRiskLevels') || []).map(x => x.toLowerCase())
+const _userRisk = (p) => (_pv(_cond(p), 'UserRiskLevels', 'userRiskLevels') || []).map(x => x.toLowerCase())
+const _incUsers = (p) => (_pv(_users(p), 'IncludeUsers', 'includeUsers') || []).map(x => x.toLowerCase())
+const _incRoles = (p) => (_pv(_users(p), 'IncludeRoles', 'includeRoles') || [])
+const _incApps = (p) => _pv(_apps(p), 'IncludeApplications', 'includeApplications') || []
+const _userActions = (p) => _pv(_apps(p), 'IncludeUserActions', 'includeUserActions') || []
+const _sc = (p) => _pv(p, 'SessionControls', 'sessionControls') || {}
+const _hasMfa = (p) => _controls(p).includes('mfa') || _pv(_pv(p, 'GrantControls', 'grantControls'), 'AuthenticationStrength', 'authenticationStrength') != null
+
+const POLICY_MATCHERS = {
+  // Require MFA for All Users — all users targeted + MFA grant
+  CA001: (p) => _incUsers(p).includes('all') && _hasMfa(p),
+  // Block Legacy Authentication — legacy client app types + block grant
+  CA002: (p) => _clientApps(p).some(c => ['exchangeactivesync', 'other'].includes(c)) && _controls(p).includes('block'),
+  // Require MFA for Admins — specific roles targeted + MFA
+  CA003: (p) => _incRoles(p).length > 0 && _hasMfa(p),
+  // Require Compliant / Hybrid-Joined Device
+  CA004: (p) => _controls(p).some(c => ['compliantdevice', 'domainjoineddevice'].includes(c.toLowerCase())),
+  // Require MFA for Azure Management — targets Azure Management app
+  CA006: (p) => _incApps(p).some(a => ['797f4846-ba00-4fd7-ba43-dac1f8f63013', 'MicrosoftAzureManagement'].includes(a)) && _hasMfa(p),
+  // Require Password Change for High User Risk
+  CA008: (p) => _userRisk(p).includes('high') && _controls(p).includes('passwordChange'),
+  // Require MFA for Medium/High Sign-In Risk
+  CA009: (p) => _signInRisk(p).some(r => ['medium', 'high'].includes(r)) && _hasMfa(p),
+  // Require App Protection Policy (iOS)
+  CA011: (p) => _platforms(p).includes('ios') && _controls(p).some(c => ['approvedApplication', 'compliantApplication'].includes(c)),
+  // Require App Protection Policy (Android)
+  CA012: (p) => _platforms(p).includes('android') && _controls(p).some(c => ['approvedApplication', 'compliantApplication'].includes(c)),
+  // Require MFA for Guest Users
+  CA014: (p) => _incUsers(p).includes('guestsorexternalusers') && _hasMfa(p),
+  // Session Control: No Persistent Browser
+  CA016: (p) => { const pb = _pv(_sc(p), 'PersistentBrowser', 'persistentBrowser'); return !!(pb && (pb.IsEnabled ?? pb.isEnabled)) },
+  // Block Unsupported Device Platforms — platform targeting + block
+  CA018: (p) => _platforms(p).length > 0 && _controls(p).includes('block'),
+  // Require MFA Registration (SSPR) — user action for security info registration
+  CA019: (p) => _userActions(p).some(a => a.toLowerCase().includes('registersecurityinfo')),
+  // Require Phishing-Resistant MFA for Admins — roles + auth strength
+  CA026: (p) => _incRoles(p).length > 0 && _pv(_pv(p, 'GrantControls', 'grantControls'), 'AuthenticationStrength', 'authenticationStrength') != null,
+  // Session Control: App-Enforced Restrictions
+  CA030: (p) => { const aer = _pv(_sc(p), 'ApplicationEnforcedRestrictions', 'applicationEnforcedRestrictions'); return !!(aer && (aer.IsEnabled ?? aer.isEnabled)) },
+  // Require MFA for Microsoft Admin Portals
+  CA033: (p) => _incApps(p).includes('MicrosoftAdminPortals') && _hasMfa(p),
+  // Session Lifetime: Admin Accounts — roles + sign-in frequency
+  CA045: (p) => { const sf = _pv(_sc(p), 'SignInFrequency', 'signInFrequency'); return _incRoles(p).length > 0 && !!(sf && (sf.IsEnabled ?? sf.isEnabled)) },
+}
+
 function computeRecommendations(tenantPolicies, selectedBaselineIds = null) {
   const baselines = selectedBaselineIds
     ? BASELINES.filter(b => selectedBaselineIds.includes(b.id))
@@ -141,7 +198,12 @@ function computeRecommendations(tenantPolicies, selectedBaselineIds = null) {
       if (!policy) return null
       if (id.startsWith('IP')) return { id, name: policy.name, severity: policy.severity, status: 'unverifiable' }
       const idPattern = new RegExp(`\\b${id}\\b`)
-      const found = tenantPolicies.some(p => idPattern.test(pick(p, 'DisplayName', 'displayName') || ''))
+      const matcher = POLICY_MATCHERS[id]
+      const found = tenantPolicies.some(p => {
+        const dn = pick(p, 'DisplayName', 'displayName') || ''
+        // ID match (tool-managed naming) OR configuration intent match
+        return idPattern.test(dn) || (matcher && matcher(p))
+      })
       return { id, name: policy.name, severity: policy.severity, status: found ? 'present' : 'missing' }
     }).filter(Boolean)
     const caItems = items.filter(i => i.status !== 'unverifiable')
@@ -216,7 +278,7 @@ function RecommendationsSection({ recommendations }) {
       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Baseline Coverage</p>
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 mb-4">
         <p className="text-xs text-amber-800">
-          <span className="font-semibold">Note:</span> Matching uses the policy ID (e.g., CA001) in the display name — policies must include the ID somewhere in their name (e.g. "CA001: Require MFA" or "Prefix — CA001: ...") to be detected. Identity Protection policies (IP*) require a separate Entra ID review.
+          <span className="font-semibold">Note:</span> Policies are matched by ID in the display name (e.g. "CA001: Require MFA") or by their configuration intent — so any policy with the right settings is detected regardless of its name. Identity Protection policies (IP*) require a separate Entra ID review.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -764,7 +826,7 @@ export default function SecurityReport() {
 
               {/* Baseline selection */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Baselines to include</label>
                   <button
                     onClick={() => setSelectedBaselines(
@@ -776,17 +838,32 @@ export default function SecurityReport() {
                   </button>
                 </div>
                 <div className="space-y-1.5">
-                  {BASELINES.map(b => (
-                    <label key={b.id} className="flex items-center gap-2 cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={selectedBaselines.includes(b.id)}
-                        onChange={() => toggleBaseline(b.id)}
-                        className="rounded border-gray-300 text-navy focus:ring-navy"
-                      />
-                      <span className="text-xs text-gray-700 group-hover:text-gray-900 leading-snug">{b.name}</span>
-                    </label>
-                  ))}
+                  {BASELINES.map(b => {
+                    const selected = selectedBaselines.includes(b.id)
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => toggleBaseline(b.id)}
+                        className={`w-full text-left rounded-lg border-2 px-3 py-2 transition-all ${
+                          selected ? b.color.card : 'border-gray-200 bg-white opacity-50 hover:opacity-75'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center ${
+                            selected ? b.color.badge : 'bg-gray-200'
+                          }`}>
+                            {selected && (
+                              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-gray-800 leading-tight">{b.name}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5 pl-5 leading-snug">{b.subtitle}</p>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </>

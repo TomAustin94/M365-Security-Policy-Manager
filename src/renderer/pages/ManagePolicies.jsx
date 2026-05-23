@@ -578,9 +578,8 @@ export default function ManagePolicies() {
                       <td className="px-4 py-3 text-xs text-gray-500">{formatDate(policy.ModifiedDateTime)}</td>
                       <td className="px-6 py-3 text-right">
                         <div className="flex justify-end gap-1">
-                          {managed ? (
-                            <Button size="sm" variant="ghost" onClick={() => handleEdit(policy)}>Edit</Button>
-                          ) : (
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(policy)}>Edit</Button>
+                          {!managed && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -589,7 +588,7 @@ export default function ManagePolicies() {
                                 window.api?.app?.openExternal(url)
                               }}
                             >
-                              Open in Entra ↗
+                              ↗
                             </Button>
                           )}
                           <Button size="sm" variant="ghost" onClick={() => handleToggle(policy)}>

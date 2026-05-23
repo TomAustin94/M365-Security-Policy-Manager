@@ -567,7 +567,7 @@ function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations
   function detailRow(label, value) {
     if (!value) return ''
     return `<tr>
-      <td style="padding:4px 12px 4px 0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#9ca3af;white-space:nowrap;vertical-align:top;width:100px">${esc(label)}</td>
+      <td style="padding:4px 12px 4px 0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#9ca3af;white-space:nowrap;vertical-align:top">${esc(label)}</td>
       <td style="padding:4px 0;font-size:11px;color:#1f2937;line-height:1.5">${esc(value)}</td>
     </tr>`
   }
@@ -608,7 +608,7 @@ function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations
       </table>
       <table style="width:100%;border-collapse:collapse">
         <tr>
-          <td style="padding:10px 16px;vertical-align:top;width:50%">
+          <td style="padding:10px 16px;vertical-align:top">
             ${hasConditions ? `<div style="${subHdr}">Scope &amp; Conditions</div>
             <table style="width:100%;border-collapse:collapse">
               ${detailRow('Users', users)}
@@ -620,7 +620,7 @@ function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations
               ${detailRow('User Risk', userRisk)}
             </table>` : ''}
           </td>
-          <td style="padding:10px 16px;vertical-align:top;width:50%">
+          <td style="padding:10px 16px;vertical-align:top">
             ${hasControls ? `<div style="${subHdr}">Access Controls</div>
             <table style="width:100%;border-collapse:collapse">
               ${detailRow('Grant', grant)}
@@ -760,7 +760,7 @@ p { margin: 0; }
       { label: 'Enabled',        value: enabled.length,  color: '#16a34a' },
       { label: 'Report Only',    value: reportOnly.length, color: '#d97706' },
       { label: 'Disabled',       value: disabled.length,  color: '#9ca3af' },
-    ].map(s => `<td style="background:#f9fafb;border:1px solid #e5e7eb;border-top:3px solid ${s.color};padding:16px 10px;text-align:center;width:25%">
+    ].map(s => `<td style="background:#f9fafb;border:1px solid #e5e7eb;border-top:3px solid ${s.color};padding:16px 10px;text-align:center">
       <div style="font-size:30px;font-weight:700;color:${s.color};line-height:1">${s.value}</div>
       <div style="font-size:10px;font-weight:700;color:#9ca3af;margin-top:8px;text-transform:uppercase;letter-spacing:0.5px">${s.label}</div>
     </td>`).join('')}

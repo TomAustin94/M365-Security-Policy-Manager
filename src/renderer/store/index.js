@@ -92,6 +92,14 @@ const useStore = create((set, get) => ({
     })),
   clearLogs: () => set({ logs: [] }),
 
+  // ── Module operations ─────────────────────────────────────────────────────
+  moduleOpInProgress: false,
+  setModuleOpInProgress: (v) => set({ moduleOpInProgress: v }),
+  moduleLogs: [],
+  appendModuleLog: (line, type = 'output') =>
+    set((s) => ({ moduleLogs: [...s.moduleLogs.slice(-999), { line, type }] })),
+  clearModuleLogs: () => set({ moduleLogs: [] }),
+
   notifications: [],
   addNotification: (msg, type = 'info') => {
     const id = Date.now() + Math.random()

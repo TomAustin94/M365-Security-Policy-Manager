@@ -481,18 +481,8 @@ function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations
   // html-to-docx ignores cell background — use dark text on light background so headers stay visible
   const TH   = `background-color:#e5eaf0;color:${NAV};padding:8px 10px;font-size:10pt;font-weight:700;text-align:left;border-bottom:2px solid ${NAV}`
 
-  // ── Header image (embedded as base64 so it works in both dev and packaged) ──
-  let headerImgTag = ''
-  try {
-    const imgPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'assets/affinity-header.png')
-      : path.join(__dirname, '../../assets/affinity-header.png')
-    const b64 = fs.readFileSync(imgPath).toString('base64')
-    headerImgTag = `<img src="data:image/png;base64,${b64}" width="648" style="display:block;width:648px;margin-bottom:28px">`
-  } catch {
-    // fallback: render brand as text if image missing
-    headerImgTag = `<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:32px"><tr><td style="border-top:8px solid ${GOLD};font-size:1pt">&nbsp;</td></tr></table><p style="font-size:38pt;font-weight:200;color:${NAV};margin:0;line-height:1">affinity</p><p style="font-size:9pt;color:${GOLD};margin:6px 0 0 0">TECHNOLOGY. TOGETHER.</p>`
-  }
+  // html-to-docx does not support data-URI <img> tags — use text brand block only.
+  const headerImgTag = `<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:32px"><tr><td style="border-top:8px solid ${GOLD};font-size:1pt">&nbsp;</td></tr></table><p style="font-size:38pt;font-weight:200;color:${NAV};margin:0;line-height:1">affinity</p><p style="font-size:9pt;color:${GOLD};margin:6px 0 0 0">TECHNOLOGY. TOGETHER.</p>`
 
   function sectionHeading(text) {
     return `<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin:28px 0 10px 0"><tr><td style="padding:0 0 6px 0;font-size:14pt;font-weight:700;color:${NAV};border-bottom:3px solid ${GOLD}">${text}</td></tr></table>`
@@ -1026,33 +1016,32 @@ function registerIpcHandlers(win) {
   ipcMain.handle('policies:update', async (_, id, patch) => {
     const safeId = safe(id)
 
-    // CA policy PATCH replaces nested objects entirely — if we send
-    // conditions: { users: {...} } the API drops applications, locations, etc.
-    // Fetch the current policy first so we can merge conditions properly.
-    let finalPatch = { ...patch }
-    if (patch.conditions) {
-      try {
-        const fetchScript = `
-try {
-  $p = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -ErrorAction Stop
-  $p | ConvertTo-Json -Depth 10 -Compress
-} catch {
-  Write-Output "FETCH_ERROR: $($_.Exception.Message)"
-}`
-        const fetchOut = await psSession.run(fetchScript)
-        if (!fetchOut.includes('FETCH_ERROR:')) {
-          const currentPolicy = JSON.parse(fetchOut.trim())
-          const existingConditions = currentPolicy.conditions || {}
-          finalPatch.conditions = { ...existingConditions, ...patch.conditions }
-        }
-      } catch {}
-    }
+    // Encode the users object and optional grantControls as base64 so PowerShell
+    // can deserialise them safely regardless of special characters.
+    const usersB64  = Buffer.from(JSON.stringify(patch.conditions?.users || {})).toString('base64')
+    const hasGrant  = Object.prototype.hasOwnProperty.call(patch, 'grantControls')
+    const grantB64  = hasGrant ? Buffer.from(JSON.stringify(patch.grantControls)).toString('base64') : ''
+    const safeDisplayName = safe(patch.displayName || '')
+    const safeState       = safe(patch.state || '')
 
-    const patchJson = JSON.stringify(finalPatch)
+    // Do the GET + merge + PATCH in a single PS execution so there is no
+    // JSON round-trip that can corrupt nested objects.  CA policy PATCH
+    // replaces nested objects entirely, so we must send the full conditions
+    // with only the users sub-object overridden.
     const script = `
 try {
-  $body = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from(patchJson).toString('base64')}'))
-  Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body $body -ContentType 'application/json'
+  $current = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -ErrorAction Stop
+  $usersJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${usersB64}'))
+  $conditions = $current.conditions
+  $conditions['users'] = $usersJson | ConvertFrom-Json -AsHashtable
+  $body = @{
+    displayName = '${safeDisplayName}'
+    state       = '${safeState}'
+    conditions  = $conditions
+  }
+  ${hasGrant ? `$grantJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${grantB64}'))
+  $body['grantControls'] = if ($grantJson -eq 'null') { $null } else { $grantJson | ConvertFrom-Json -AsHashtable }` : ''}
+  Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body ($body | ConvertTo-Json -Depth 10 -Compress) -ContentType 'application/json'
   Write-Output "SUCCESS"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
@@ -1293,15 +1282,21 @@ Write-Output "NAME_MAP_END"`,
     if (!psSession.alive) return { items: [], error: 'No active session' }
     const safeQ = safe(query || '')
     if (!safeQ) return { items: [] }
-    // Use Invoke-MgGraphRequest directly so we control headers and $count in the URL.
-    // startsWith across multiple properties in a single OR filter requires
-    // ConsistencyLevel:eventual + $count=true — both provided explicitly here.
+    // Graph's startsWith filter does not support OR across *different* properties
+    // in a single request — it silently returns 0 results. Run two separate queries
+    // (displayName and UPN) then deduplicate in PowerShell.
     const script = `
 try {
   $q = '${safeQ}'
-  $uri = "https://graph.microsoft.com/v1.0/users?\`$filter=startsWith(displayName,'$q') or startsWith(userPrincipalName,'$q')&\`$count=true&\`$top=15&\`$select=id,displayName,mail,userPrincipalName"
-  $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
-  $result = @($resp.value | ForEach-Object {
+  $hdrs = @{ 'ConsistencyLevel' = 'eventual' }
+  $sel  = 'id,displayName,mail,userPrincipalName'
+  $r1 = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users?\`$filter=startsWith(displayName,'$q')&\`$count=true&\`$top=10&\`$select=$sel" -Headers $hdrs -ErrorAction Stop
+  $r2 = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users?\`$filter=startsWith(userPrincipalName,'$q')&\`$count=true&\`$top=10&\`$select=$sel" -Headers $hdrs -ErrorAction Stop
+  $seen = @{}; $combined = [System.Collections.Generic.List[object]]::new()
+  foreach ($u in (@($r1.value) + @($r2.value))) {
+    if ($u -and $u.id -and -not $seen.ContainsKey($u.id)) { $seen[$u.id] = $true; $combined.Add($u) }
+  }
+  $result = @($combined | Select-Object -First 15 | ForEach-Object {
     @{ id = $_.id; displayName = $_.displayName; mail = if ($_.mail) { $_.mail } else { $_.userPrincipalName } }
   })
   if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
@@ -1326,9 +1321,8 @@ try {
     const script = `
 try {
   $q = '${safeQ}'
-  $uri = "https://graph.microsoft.com/v1.0/groups?\`$filter=startsWith(displayName,'$q')&\`$count=true&\`$top=15&\`$select=id,displayName,description"
-  $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
-  $result = @($resp.value | ForEach-Object {
+  $resp = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups?\`$filter=startsWith(displayName,'$q')&\`$count=true&\`$top=15&\`$select=id,displayName,description" -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
+  $result = @($resp.value | Where-Object { $_ } | ForEach-Object {
     @{ id = $_.id; displayName = $_.displayName; description = $_.description }
   })
   if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }

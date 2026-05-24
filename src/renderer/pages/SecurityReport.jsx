@@ -758,15 +758,15 @@ function ReportView({ orgName, tenantPolicies, nameMap = {}, date, selectedBasel
       <Modal
         open={!!savedModal}
         onClose={() => setSavedModal(null)}
-        title={savedModal?.type === 'pdf' ? 'Technical Audit Report saved' : 'Client Proposal saved'}
+        title={savedModal?.type === 'pdf' ? 'Technical Audit Report exported' : 'Client Proposal exported'}
         variant="success"
         size="md"
       >
         <div className="mt-2 space-y-4">
           <p className="text-sm text-gray-600">
             {savedModal?.type === 'pdf'
-              ? 'Your technical audit report has been exported as a PDF and is ready to share with IT teams and administrators.'
-              : 'Your client proposal has been exported as a Word document and is ready for the sales team to use in client conversations.'}
+              ? 'Your technical audit report is ready for review by the technical team or internal IT stakeholders. Share it directly or use it to support a remediation conversation.'
+              : 'Your client proposal is ready to share. Use it to walk through the findings with the client, or hand it to the sales team to support a follow-up conversation.'}
           </p>
           <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Saved to</p>

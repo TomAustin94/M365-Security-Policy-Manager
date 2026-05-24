@@ -13,6 +13,21 @@ function pick(obj, ...keys) {
   for (const k of keys) { if (obj[k] !== undefined) return obj[k] }
 }
 
+// Recursively convert PascalCase keys to camelCase and strip PS SDK metadata
+// (AdditionalProperties, BackingStore, @-prefixed OData keys) before sending to Graph.
+const _STRIP_KEYS = new Set(['AdditionalProperties', 'BackingStore'])
+function cleanForGraph(v) {
+  if (Array.isArray(v)) return v.map(cleanForGraph)
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(
+      Object.entries(v)
+        .filter(([k]) => !_STRIP_KEYS.has(k) && !k.startsWith('@'))
+        .map(([k, val]) => [k.charAt(0).toLowerCase() + k.slice(1), cleanForGraph(val)])
+    )
+  }
+  return v
+}
+
 const GRANT_LABELS = {
   mfa: 'Require MFA', compliantDevice: 'Require compliant device',
   domainJoinedDevice: 'Require hybrid joined', approvedApplication: 'Require approved app',
@@ -147,10 +162,13 @@ function PolicyEditor({ policy, onSave, onCancel, saving }) {
     if (excGrpIds.length)  usersObj.excludeGroups = excGrpIds
     if (excUserIds.length) usersObj.excludeUsers  = excUserIds
 
+    // Preserve existing conditions (applications, locations etc.) — Graph requires
+    // the full conditions object on PATCH. Strip PS SDK metadata before sending.
+    const cleanedConditions = cleanForGraph(cond)
     const patch = {
       displayName: name,
       state,
-      conditions: { users: usersObj },
+      conditions: { ...cleanedConditions, users: usersObj },
     }
 
     if (!hasAuthStrength) {

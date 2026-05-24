@@ -470,6 +470,22 @@ function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations
   const stateOf = p => p.State || p.state || 'unknown'
   const stateLabel = s => ({ enabled: 'Enabled', disabled: 'Disabled', enabledForReportingButNotEnforced: 'Report Only' }[s] || 'Unknown')
 
+  function pageBreak() {
+    return `<p style="page-break-before:always;margin:0;font-size:1pt">&nbsp;</p>`
+  }
+
+  // Try to embed the Affinity IT cover JPEG as base64; fall back to styled text.
+  let coverImgHtml
+  try {
+    const imgPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'assets/affinity_it_services_ltd_cover.jpeg')
+      : path.join(__dirname, '../../assets/affinity_it_services_ltd_cover.jpeg')
+    const imgBase64 = fs.readFileSync(imgPath).toString('base64')
+    coverImgHtml = `<img src="data:image/jpeg;base64,${imgBase64}" width="648" style="display:block;margin-bottom:16px" />`
+  } catch {
+    coverImgHtml = `<div style="border-top:6px solid #E8A830;padding-top:12px;margin-bottom:16px"><div style="font-size:38pt;font-weight:200;color:#1a2d4a;letter-spacing:-2px;line-height:1">Affinity IT</div><div style="font-size:11pt;color:#E8A830;margin-top:6px;letter-spacing:1px">Technology. Together.</div></div>`
+  }
+
   // ── Policy descriptions for the gap analysis section ────────────────────────
   const POLICY_DESC = {
     CA001: 'Requires all users to complete MFA on every sign-in, protecting against compromised passwords — the single most impactful control available.',
@@ -643,10 +659,9 @@ strong { color: #1a2d4a; }
 <body>
 
 <!-- ═══ COVER ════════════════════════════════════════════════════════════════ -->
-<div style="border-top:6px solid #E8A830;padding-top:40px;margin-bottom:48px">
+<div style="padding-top:8px;margin-bottom:48px">
 
-  <div style="font-size:38pt;font-weight:200;color:#1a2d4a;letter-spacing:-2px;line-height:1">affinity</div>
-  <div style="font-size:11pt;color:#E8A830;margin-top:6px;letter-spacing:1px">Technology. Together.</div>
+${coverImgHtml}
 
   <div style="margin-top:52px">
     <div style="font-size:9pt;font-weight:700;color:#9ca3af;letter-spacing:2px">MICROSOFT 365 SECURITY POLICY REPORT</div>
@@ -668,6 +683,8 @@ strong { color: #1a2d4a; }
   </table>
 
 </div>
+
+${pageBreak()}
 
 <!-- ═══ EXECUTIVE SUMMARY ═══════════════════════════════════════════════════ -->
 <h2>Executive Summary</h2>
@@ -714,6 +731,8 @@ Each baseline represents a curated set of policies addressing a specific securit
   <tbody>${baselineSummaryRows}</tbody>
 </table>
 
+${pageBreak()}
+
 <!-- ═══ GAP ANALYSIS ═════════════════════════════════════════════════════════ -->
 <h2>Gap Analysis &amp; Recommendations</h2>
 <p>The following section details each missing policy, its business risk, and the specific protection it provides. These findings form the
@@ -723,6 +742,8 @@ any existing policy with the correct settings is detected regardless of its name
 ${gapSections || '<p style="color:#15803d;font-weight:700">&#10003; No gaps identified — all selected baseline policies are present.</p>'}
 
 ${allMissing.length > 0 ? `
+${pageBreak()}
+
 <!-- ═══ ACTION PLAN ══════════════════════════════════════════════════════════ -->
 <h2>Recommended Action Plan</h2>
 <p>The table below consolidates all recommended policies across the selected baselines, ordered by priority. Affinity IT
@@ -754,6 +775,8 @@ can assist with the design, testing (Report Only mode), and phased enforcement o
 </table>
 ` : ''}
 ` : ''}
+
+${pageBreak()}
 
 <!-- ═══ POLICY INVENTORY ══════════════════════════════════════════════════════ -->
 <h2>Conditional Access Policy Inventory</h2>
@@ -1243,12 +1266,24 @@ Write-Output "NAME_MAP_END"`,
     if (!psSession.alive) return { items: [], error: 'No active session' }
     const safeQ = safe(query || '')
     if (!safeQ) return { items: [] }
+    // Use $search (substring match) across displayName and UPN — two separate requests
+    // then deduplicate. $search requires ConsistencyLevel:eventual and $count=true.
     const script = `
 try {
-  $users = Get-MgUser -Search "displayName:${safeQ}" -ConsistencyLevel eventual -Top 10 -Select 'id,displayName,mail,userPrincipalName' -OrderBy displayName -ErrorAction Stop
-  $result = @($users) | ForEach-Object {
-    @{ id = $_.Id; displayName = $_.DisplayName; mail = if ($_.Mail) { $_.Mail } else { $_.UserPrincipalName } }
+  $q = '${safeQ}'
+  $hdrs = @{ 'ConsistencyLevel' = 'eventual' }
+  $sel = 'id,displayName,mail,userPrincipalName'
+  $uri1 = 'https://graph.microsoft.com/v1.0/users?$search="displayName:' + $q + '"&$count=true&$top=10&$select=' + $sel
+  $uri2 = 'https://graph.microsoft.com/v1.0/users?$search="userPrincipalName:' + $q + '"&$count=true&$top=10&$select=' + $sel
+  $r1 = Invoke-MgGraphRequest -Method GET -Uri $uri1 -Headers $hdrs -ErrorAction Stop
+  $r2 = Invoke-MgGraphRequest -Method GET -Uri $uri2 -Headers $hdrs -ErrorAction Stop
+  $seen = @{}; $combined = [System.Collections.Generic.List[object]]::new()
+  foreach ($u in (@($r1.value) + @($r2.value))) {
+    if ($u -and $u.id -and -not $seen.ContainsKey($u.id)) { $seen[$u.id] = $true; $combined.Add($u) }
   }
+  $result = @($combined | Select-Object -First 15 | ForEach-Object {
+    @{ id = $_.id; displayName = $_.displayName; mail = if ($_.mail) { $_.mail } else { $_.userPrincipalName } }
+  })
   if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
@@ -1270,10 +1305,12 @@ try {
     if (!safeQ) return { items: [] }
     const script = `
 try {
-  $groups = Get-MgGroup -Search "displayName:${safeQ}" -ConsistencyLevel eventual -Top 10 -Select 'id,displayName,description' -OrderBy displayName -ErrorAction Stop
-  $result = @($groups) | ForEach-Object {
-    @{ id = $_.Id; displayName = $_.DisplayName; description = $_.Description }
-  }
+  $q = '${safeQ}'
+  $uri = 'https://graph.microsoft.com/v1.0/groups?$search="displayName:' + $q + '"&$count=true&$top=15&$select=id,displayName,description'
+  $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
+  $result = @($resp.value | Where-Object { $_ } | ForEach-Object {
+    @{ id = $_.id; displayName = $_.displayName; description = $_.description }
+  })
   if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"

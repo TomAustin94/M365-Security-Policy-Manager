@@ -36,6 +36,10 @@
       {
         "from": "scripts/install-powershell.sh",
         "to": "scripts/install-powershell.sh"
+      },
+      {
+        "from": "assets/affinity_it_services_ltd_cover.jpeg",
+        "to": "assets/affinity_it_services_ltd_cover.jpeg"
       }
     ],
     "publish": [

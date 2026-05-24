@@ -808,7 +808,6 @@ export default function CreatePolicies() {
               selectedIds={selectedIds}
               policyConfigs={policyConfigs}
               setPolicyConfigs={setPolicyConfigs}
-              hasSession={usingSession}
             />
           )}
           {contentStep === 5 && (

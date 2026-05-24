@@ -19,23 +19,16 @@ function isDefaultValue(field, value) {
 }
 
 // Single field renderer
-function FieldInput({ field, value, onChange, hasSession }) {
+function FieldInput({ field, value, onChange }) {
   const cls = 'block w-full rounded border border-gray-300 px-2.5 py-1.5 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy'
 
   if (field.type === 'entity-groups' || field.type === 'entity-users') {
-    const pickerType = field.type === 'entity-groups' ? 'groups' : 'users'
     return (
-      <div className="space-y-1">
-        <EntityPicker
-          type={pickerType}
-          selected={Array.isArray(value) ? value : []}
-          onChange={onChange}
-          noSession={!hasSession}
-        />
-        {!hasSession && (
-          <p className="text-xs text-amber-600">Connect to a tenant to search — or paste an Object ID and press Enter.</p>
-        )}
-      </div>
+      <EntityPicker
+        type={field.type === 'entity-groups' ? 'groups' : 'users'}
+        selected={Array.isArray(value) ? value : []}
+        onChange={onChange}
+      />
     )
   }
 
@@ -83,7 +76,7 @@ function FieldInput({ field, value, onChange, hasSession }) {
 }
 
 // One policy row (collapsed by default, expand to edit fields)
-function PolicyRow({ policy, config, onChange, hasSession }) {
+function PolicyRow({ policy, config, onChange }) {
   const [open, setOpen] = useState(false)
   const fields = getFields(policy)
   const state = config.state || fields.find(f => f.key === 'state')?.default || 'enabled'
@@ -139,7 +132,6 @@ function PolicyRow({ policy, config, onChange, hasSession }) {
                     field={field}
                     value={config[field.key] ?? defaultVal}
                     onChange={val => onChange({ ...config, [field.key]: val })}
-                    hasSession={hasSession}
                   />
                   {field.hint && field.type !== 'entity-groups' && field.type !== 'entity-users' && (
                     <p className="mt-1 text-xs text-gray-400">{field.hint}</p>
@@ -160,7 +152,7 @@ function PolicyRow({ policy, config, onChange, hasSession }) {
   )
 }
 
-export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolicyConfigs, hasSession }) {
+export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolicyConfigs }) {
   const [search, setSearch] = useState('')
   const [expandedCategory, setExpandedCategory] = useState(null)
 
@@ -273,7 +265,6 @@ export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolic
                       policy={p}
                       config={getConfig(p)}
                       onChange={cfg => setConfig(p.id, cfg)}
-                      hasSession={hasSession}
                     />
                   ))}
                 </div>

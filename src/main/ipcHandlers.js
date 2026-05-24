@@ -472,7 +472,7 @@ ${recommendations.length > 0 ? recSection(recommendations, esc, date) : ''}
 function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations = [], amName = null, amEmail = null) {
   function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
   const pv = (obj, ...keys) => { for (const k of keys) { if (obj?.[k] != null) return obj[k] } return null }
-  const stateOf = p => p.State || p.state || 'unknown'
+  const stateOf  = p => p.State || p.state || 'unknown'
   const stateLabel = s => ({ enabled: 'Enabled', disabled: 'Disabled', enabledForReportingButNotEnforced: 'Report Only' }[s] || 'Unknown')
 
   // ── Policy descriptions for the gap analysis section ────────────────────────
@@ -627,164 +627,275 @@ ${r.unverifiableCount > 0 ? `<p style="font-size:9pt;color:#9ca3af;font-style:it
     </tr>`
   }).join('')
 
-  // ── HTML ────────────────────────────────────────────────────────────────────
+  // ── HTML (table-based layout — Word-safe, no CSS grid/flex) ────────────────
+  const NAV = '#1a2d4a'
+  const GOLD = '#E8A830'
+  const TH = `background:${NAV};color:#ffffff;padding:8px 12px;font-size:10pt;font-weight:700;text-align:left`
+
+  function sectionHeading(text) {
+    return `<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin:28px 0 12px 0">
+  <tr>
+    <td style="padding:0 0 6px 0;font-size:14pt;font-weight:700;color:${NAV};border-bottom:3px solid ${GOLD}">${text}</td>
+  </tr>
+</table>`
+  }
+
+  function pageBreak() {
+    return `<p style="page-break-before:always;margin:0;font-size:1pt">&nbsp;</p>`
+  }
+
   return `<!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8">
-<style>
-* { box-sizing: border-box; }
-body { font-family: 'Calibri', 'Segoe UI', sans-serif; font-size: 11pt; color: #1f2937; line-height: 1.6; background: #ffffff; }
-h1 { font-size: 26pt; font-weight: 300; color: #1a2d4a; margin: 0 0 4px 0; }
-h2 { font-size: 14pt; font-weight: 700; color: #1a2d4a; margin: 32px 0 10px 0; padding-bottom: 6px; border-bottom: 2px solid #E8A830; }
-h3 { font-size: 12pt; font-weight: 700; color: #1a2d4a; margin: 20px 0 6px 0; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-th { padding: 8px 12px; text-align: left; font-size: 10pt; font-weight: 700; }
-td { padding: 7px 12px; }
-p { margin: 0 0 8px 0; }
-strong { color: #1a2d4a; }
-</style>
-</head>
-<body>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#374151;line-height:1.55;margin:0;padding:0">
 
-<!-- ═══ COVER ════════════════════════════════════════════════════════════════ -->
-<div style="border-top:6px solid #E8A830;padding-top:40px;margin-bottom:48px">
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     COVER PAGE
+════════════════════════════════════════════════════════════════════════════ -->
 
-  <div style="font-size:38pt;font-weight:200;color:#1a2d4a;letter-spacing:-2px;line-height:1">affinity</div>
-  <div style="font-size:11pt;color:#E8A830;margin-top:6px;letter-spacing:1px">Technology. Together.</div>
-
-  <div style="margin-top:52px">
-    <div style="font-size:9pt;font-weight:700;color:#9ca3af;letter-spacing:2px">MICROSOFT 365 SECURITY POLICY REPORT</div>
-    <div style="font-size:28pt;font-weight:700;color:#1a2d4a;line-height:1.2;margin-top:8px">${esc(orgName || 'Tenant')}</div>
-    <div style="font-size:11pt;color:#6b7280;margin-top:8px">${esc(date)}</div>
-  </div>
-
-  <table style="width:100%;border-collapse:collapse;margin-top:52px">
-    <tr>
-      <td style="background:#E8A830;padding:0 0 0 0;font-size:1pt">&nbsp;</td>
-    </tr>
-    <tr>
-      <td style="padding:16px 20px;background:#f8fafc;font-size:10pt;color:#374151">
-        <strong>Confidential</strong> — Prepared by Affinity IT for <strong>${esc(orgName || 'your organisation')}</strong>.
-        This report provides a full analysis of your Microsoft 365 Conditional Access security configuration, identifies gaps against
-        Microsoft&rsquo;s recommended security baselines, and sets out a prioritised action plan.
-      </td>
-    </tr>
-  </table>
-
-</div>
-
-<!-- ═══ EXECUTIVE SUMMARY ═══════════════════════════════════════════════════ -->
-<h2>Executive Summary</h2>
-<p>This report documents the Conditional Access policy configuration for <strong>${esc(orgName || 'your organisation')}</strong>
-as of <strong>${esc(date)}</strong>. Conditional Access is the enforcement layer in Microsoft Entra ID that controls who can
-access cloud applications, from which devices and locations, and under what conditions.</p>
-<p>The assessment reviewed <strong>${policies.length} Conditional Access ${policies.length === 1 ? 'policy' : 'policies'}</strong>
-and compared the configuration against Microsoft&rsquo;s recommended security baselines. The table below summarises the current posture.</p>
-
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-  <thead>
-    <tr>
-      <th style="background:#1a2d4a;color:#ffffff;padding:10px 16px;text-align:center">Total Policies</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:10px 16px;text-align:center">Active (Enforced)</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:10px 16px;text-align:center">Audit Mode Only</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:10px 16px;text-align:center">Disabled</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td style="padding:14px 16px;font-size:22pt;font-weight:700;color:#1a2d4a;text-align:center;border-bottom:1px solid #e5e7eb">${policies.length}</td>
-      <td style="padding:14px 16px;font-size:22pt;font-weight:700;color:#15803d;text-align:center;border-bottom:1px solid #e5e7eb">${enabled.length}</td>
-      <td style="padding:14px 16px;font-size:22pt;font-weight:700;color:#b45309;text-align:center;border-bottom:1px solid #e5e7eb">${reportOnly.length}</td>
-      <td style="padding:14px 16px;font-size:22pt;font-weight:700;color:#9ca3af;text-align:center;border-bottom:1px solid #e5e7eb">${disabled.length}</td>
-    </tr>
-  </tbody>
+<!-- Gold top bar -->
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse">
+  <tr><td style="background:${GOLD};height:6px;font-size:1pt">&nbsp;</td></tr>
 </table>
+
+<!-- Navy header -->
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse">
+  <tr>
+    <td style="background:${NAV};padding:36px 40px 40px 40px">
+      <p style="font-size:32pt;font-weight:200;color:#ffffff;margin:0;letter-spacing:-1px;line-height:1">affinity</p>
+      <p style="font-size:9pt;color:${GOLD};margin:6px 0 0 0;letter-spacing:2px">TECHNOLOGY. TOGETHER.</p>
+    </td>
+  </tr>
+</table>
+
+<!-- Report title block -->
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-top:52px">
+  <tr>
+    <td style="padding:0 0 4px 0">
+      <p style="font-size:8pt;font-weight:700;color:#9ca3af;letter-spacing:3px;margin:0">MICROSOFT 365 SECURITY ASSESSMENT</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:6px 0 8px 0">
+      <p style="font-size:30pt;font-weight:700;color:${NAV};margin:0;line-height:1.15">${esc(orgName || 'Tenant Report')}</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 0 48px 0">
+      <p style="font-size:11pt;color:#6b7280;margin:0">${esc(date)}</p>
+    </td>
+  </tr>
+</table>
+
+<!-- Confidentiality notice -->
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:40px">
+  <tr>
+    <td width="4" style="background:${GOLD}">&nbsp;</td>
+    <td style="padding:14px 18px;background:#f8fafc;font-size:10pt;color:#374151">
+      <strong style="color:${NAV}">Confidential</strong> &mdash; Prepared by Affinity IT for
+      <strong style="color:${NAV}">${esc(orgName || 'your organisation')}</strong>.
+      This document provides a full assessment of the Microsoft 365 Conditional Access security
+      posture, identifies gaps against Microsoft&rsquo;s recommended security baselines, and presents
+      a prioritised action plan for remediation.
+    </td>
+  </tr>
+</table>
+
+<!-- Stats strip -->
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse">
+  <tr>
+    <td width="162" style="padding:20px 12px;background:${NAV};text-align:center;border-right:1px solid rgba(255,255,255,0.1)">
+      <p style="font-size:28pt;font-weight:700;color:#ffffff;margin:0;line-height:1">${policies.length}</p>
+      <p style="font-size:8pt;font-weight:700;color:rgba(255,255,255,0.55);margin:6px 0 0 0;letter-spacing:1px">TOTAL POLICIES</p>
+    </td>
+    <td width="162" style="padding:20px 12px;background:${NAV};text-align:center;border-right:1px solid rgba(255,255,255,0.1)">
+      <p style="font-size:28pt;font-weight:700;color:#4ade80;margin:0;line-height:1">${enabled.length}</p>
+      <p style="font-size:8pt;font-weight:700;color:rgba(255,255,255,0.55);margin:6px 0 0 0;letter-spacing:1px">ENFORCED</p>
+    </td>
+    <td width="162" style="padding:20px 12px;background:${NAV};text-align:center;border-right:1px solid rgba(255,255,255,0.1)">
+      <p style="font-size:28pt;font-weight:700;color:#fbbf24;margin:0;line-height:1">${reportOnly.length}</p>
+      <p style="font-size:8pt;font-weight:700;color:rgba(255,255,255,0.55);margin:6px 0 0 0;letter-spacing:1px">AUDIT MODE</p>
+    </td>
+    <td width="162" style="padding:20px 12px;background:${NAV};text-align:center">
+      <p style="font-size:28pt;font-weight:700;color:#9ca3af;margin:0;line-height:1">${disabled.length}</p>
+      <p style="font-size:8pt;font-weight:700;color:rgba(255,255,255,0.55);margin:6px 0 0 0;letter-spacing:1px">DISABLED</p>
+    </td>
+  </tr>
+</table>
+
+${pageBreak()}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     EXECUTIVE SUMMARY
+════════════════════════════════════════════════════════════════════════════ -->
+${sectionHeading('Executive Summary')}
+
+<p style="margin:0 0 10px 0;font-size:11pt;color:#374151">
+  This report documents the Conditional Access policy configuration for
+  <strong style="color:${NAV}">${esc(orgName || 'your organisation')}</strong> as of
+  <strong style="color:${NAV}">${esc(date)}</strong>. Conditional Access is the
+  enforcement layer in Microsoft Entra ID that governs who can access cloud applications,
+  from which devices and locations, and under what conditions.
+</p>
+<p style="margin:0 0 10px 0;font-size:11pt;color:#374151">
+  The assessment reviewed
+  <strong style="color:${NAV}">${policies.length} Conditional Access ${policies.length === 1 ? 'policy' : 'policies'}</strong>
+  and compared the configuration against Microsoft&rsquo;s recommended security baselines.
+  ${recommendations.length > 0 && allMissing.length > 0
+    ? `<strong style="color:#dc2626">${allMissing.length} recommended ${allMissing.length === 1 ? 'policy' : 'policies'}</strong> were not detected across the assessed baselines.`
+    : recommendations.length > 0
+    ? `<strong style="color:#15803d">All assessed baseline policies are in place.</strong>`
+    : ''
+  }
+</p>
 
 ${recommendations.length > 0 ? `
-<!-- ═══ BASELINE COMPLIANCE ══════════════════════════════════════════════════ -->
-<h2>Baseline Compliance Overview</h2>
-<p>The table below shows how the current Conditional Access configuration compares against Microsoft&rsquo;s recommended security baselines.
-Each baseline represents a curated set of policies addressing a specific security scenario.</p>
+${sectionHeading('Baseline Compliance Overview')}
 
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-  <thead>
-    <tr>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Baseline</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px;text-align:center">Score</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px;text-align:center">Policies Detected</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Finding</th>
-    </tr>
-  </thead>
-  <tbody>${baselineSummaryRows}</tbody>
+<p style="margin:0 0 10px 0;font-size:11pt;color:#374151">
+  The table below compares the current Conditional Access configuration against each selected Microsoft security baseline.
+  Coverage is calculated as the percentage of expected policies detected in the tenant.
+</p>
+
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:16px">
+  <tr>
+    <td width="280" style="${TH}">Baseline</td>
+    <td width="80" style="${TH};text-align:center">Score</td>
+    <td width="120" style="${TH};text-align:center">Detected</td>
+    <td width="168" style="${TH}">Finding</td>
+  </tr>
+  ${recommendations.map((r, i) => {
+    const pct      = r.totalCaCount > 0 ? Math.round((r.presentCount / r.totalCaCount) * 100) : 100
+    const pctColor = pct === 100 ? '#15803d' : pct >= 70 ? '#b45309' : '#dc2626'
+    const bg       = i % 2 === 0 ? '#ffffff' : '#f8fafc'
+    const finding  = r.missingItems.length === 0
+      ? `<strong style="color:#15803d">&#10003; Compliant</strong>`
+      : `<strong style="color:#dc2626">${r.missingItems.length} gap${r.missingItems.length > 1 ? 's' : ''}</strong>`
+    return `<tr style="background:${bg}">
+      <td width="280" style="padding:8px 12px;font-size:10pt;font-weight:600;color:${NAV};border-bottom:1px solid #e5e7eb">${esc(r.name)}</td>
+      <td width="80" style="padding:8px 12px;font-size:18pt;font-weight:700;color:${pctColor};text-align:center;border-bottom:1px solid #e5e7eb">${pct}%</td>
+      <td width="120" style="padding:8px 12px;font-size:10pt;color:#374151;text-align:center;border-bottom:1px solid #e5e7eb">${r.presentCount} / ${r.totalCaCount}</td>
+      <td width="168" style="padding:8px 12px;font-size:10pt;border-bottom:1px solid #e5e7eb">${finding}</td>
+    </tr>`
+  }).join('')}
 </table>
+` : ''}
 
-<!-- ═══ GAP ANALYSIS ═════════════════════════════════════════════════════════ -->
-<h2>Gap Analysis &amp; Recommendations</h2>
-<p>The following section details each missing policy, its business risk, and the specific protection it provides. These findings form the
-basis of the recommended action plan. Policies are matched by ID in their display name <em>or</em> by their configuration, so
-any existing policy with the correct settings is detected regardless of its name.</p>
+${pageBreak()}
 
-${gapSections || '<p style="color:#15803d;font-weight:700">&#10003; No gaps identified — all selected baseline policies are present.</p>'}
+${gapSections.length > 0 ? `
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     GAP ANALYSIS
+════════════════════════════════════════════════════════════════════════════ -->
+${sectionHeading('Gap Analysis &amp; Recommendations')}
+
+<p style="margin:0 0 14px 0;font-size:11pt;color:#374151">
+  The following section details each missing policy, the risk it addresses, and the specific protection it provides.
+  Policies are matched by ID in their display name <em>or</em> by their configuration &mdash; any existing policy
+  with the correct settings is detected regardless of its name.
+</p>
+
+${gapSections}
+` : recommendations.length > 0 ? `
+${sectionHeading('Gap Analysis')}
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:16px">
+  <tr>
+    <td width="4" style="background:#15803d">&nbsp;</td>
+    <td style="padding:14px 18px;background:#f0fdf4;font-size:11pt;color:#15803d;font-weight:700">
+      &#10003; Excellent &mdash; all assessed baseline policies are detected in this tenant.
+    </td>
+  </tr>
+</table>
+` : ''}
 
 ${allMissing.length > 0 ? `
-<!-- ═══ ACTION PLAN ══════════════════════════════════════════════════════════ -->
-<h2>Recommended Action Plan</h2>
-<p>The table below consolidates all recommended policies across the selected baselines, ordered by priority. Affinity IT
-can assist with the design, testing (Report Only mode), and phased enforcement of these policies in your environment.</p>
+${sectionHeading('Recommended Action Plan')}
 
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-  <thead>
-    <tr>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px;text-align:center">#</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Policy ID</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Policy to Implement</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Priority</th>
-    </tr>
-  </thead>
-  <tbody>${actionRows}</tbody>
+<p style="margin:0 0 10px 0;font-size:11pt;color:#374151">
+  The table below consolidates all recommended policies across the selected baselines, ordered by priority.
+  Affinity IT can design, test in Report Only mode, and phase the enforcement of these policies to avoid disruption.
+</p>
+
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:16px">
+  <tr>
+    <td width="36" style="${TH};text-align:center">#</td>
+    <td width="64" style="${TH}">Policy ID</td>
+    <td width="300" style="${TH}">Policy to Implement</td>
+    <td width="248" style="${TH}">What it protects</td>
+  </tr>
+  ${allMissing.map((item, i) => {
+    const bg   = i % 2 === 0 ? '#ffffff' : '#f8fafc'
+    const sc   = SEV_COLOR[item.severity] || '#6b7280'
+    const sbg  = SEV_BG[item.severity]   || '#f3f4f6'
+    return `<tr style="background:${bg}">
+      <td width="36" style="padding:7px 12px;font-size:10pt;font-weight:700;color:${NAV};text-align:center;border-bottom:1px solid #e5e7eb">${i + 1}</td>
+      <td width="64" style="padding:7px 12px;font-family:'Courier New',monospace;font-size:9pt;color:#6b7280;border-bottom:1px solid #e5e7eb">${esc(item.id)}</td>
+      <td width="300" style="padding:7px 12px;font-size:10pt;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb">${esc(item.name)}</td>
+      <td width="248" style="padding:7px 12px;font-size:9pt;color:#374151;border-bottom:1px solid #e5e7eb">${esc(POLICY_DESC[item.id] || item.severity.charAt(0).toUpperCase() + item.severity.slice(1) + ' priority')}</td>
+    </tr>`
+  }).join('')}
 </table>
 
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+<!-- Next steps callout -->
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:24px">
   <tr>
-    <td style="padding:14px 18px;background:#f8fafc;border-left:4px solid #E8A830;font-size:10pt;color:#374151">
-      <strong>Next steps:</strong> Affinity IT recommends deploying new policies in <em>Report Only</em> mode first to assess
-      impact before switching to enforcement. This approach avoids accidental lockouts and provides a clear baseline for review.
+    <td width="4" style="background:${GOLD}">&nbsp;</td>
+    <td style="padding:16px 20px;background:#fffbeb;font-size:10pt;color:#374151">
+      <strong style="color:${NAV}">Recommended next steps:</strong>
+      Affinity IT advises deploying new policies in <em>Report Only</em> mode first to evaluate
+      impact before full enforcement. This avoids accidental lockouts and provides a clear audit trail.
       ${amName && amEmail
-        ? `Contact <strong>${esc(amName)}</strong> at <a href="mailto:${esc(amEmail)}" style="color:#1a2d4a">${esc(amEmail)}</a> to discuss a phased implementation programme.`
-        : 'Contact your Affinity account manager to discuss a phased implementation programme.'
+        ? ` Contact <strong style="color:${NAV}">${esc(amName)}</strong> at <a href="mailto:${esc(amEmail)}" style="color:${NAV}">${esc(amEmail)}</a> to discuss a phased implementation programme.`
+        : ' Contact your Affinity IT account manager to discuss a phased implementation programme.'
       }
     </td>
   </tr>
 </table>
 ` : ''}
-` : ''}
 
-<!-- ═══ POLICY INVENTORY ══════════════════════════════════════════════════════ -->
-<h2>Conditional Access Policy Inventory</h2>
-<p>The following table lists all ${policies.length} Conditional Access ${policies.length === 1 ? 'policy' : 'policies'} currently configured in your tenant.</p>
+${pageBreak()}
 
-<table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-  <thead>
-    <tr>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Policy Name</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Status</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Applies To</th>
-      <th style="background:#1a2d4a;color:#ffffff;padding:8px 12px">Grant Controls</th>
-    </tr>
-  </thead>
-  <tbody>${inventoryRows}</tbody>
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     POLICY INVENTORY
+════════════════════════════════════════════════════════════════════════════ -->
+${sectionHeading('Conditional Access Policy Inventory')}
+
+<p style="margin:0 0 10px 0;font-size:11pt;color:#374151">
+  The following table lists all ${policies.length} Conditional Access ${policies.length === 1 ? 'policy' : 'policies'}
+  currently configured in the <strong style="color:${NAV}">${esc(orgName || 'tenant')}</strong> environment.
+</p>
+
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-bottom:24px">
+  <tr>
+    <td width="280" style="${TH}">Policy Name</td>
+    <td width="88" style="${TH}">Status</td>
+    <td width="148" style="${TH}">Applies To</td>
+    <td width="132" style="${TH}">Grant Controls</td>
+  </tr>
+  ${inventoryRows}
 </table>
 
-<!-- ═══ FOOTER ═══════════════════════════════════════════════════════════════ -->
-<table style="width:100%;border-collapse:collapse;margin-top:40px">
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     CONTACT & FOOTER
+════════════════════════════════════════════════════════════════════════════ -->
+${amName && amEmail ? `
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-top:32px;margin-bottom:16px">
   <tr>
-    <td style="border-top:2px solid #E8A830;padding-top:12px">
-      <p style="font-size:9pt;color:#9ca3af;margin:0">Generated by M365 Security Policy Manager &middot; Affinity IT &middot; ${esc(date)} &middot; Confidential</p>
-      <p style="font-size:9pt;color:#9ca3af;margin-top:4px">${amName && amEmail
-        ? `To discuss these recommendations, please contact <strong style="color:#6b7280">${esc(amName)}</strong> at <a href="mailto:${esc(amEmail)}" style="color:#9ca3af">${esc(amEmail)}</a>.`
-        : 'To discuss these recommendations or engage Affinity IT to implement the identified improvements, please contact your Affinity account manager.'
-      }</p>
+    <td style="background:${NAV};padding:24px 32px">
+      <p style="font-size:10pt;font-weight:700;color:rgba(255,255,255,0.6);letter-spacing:1px;margin:0 0 6px 0">YOUR ACCOUNT MANAGER</p>
+      <p style="font-size:14pt;font-weight:700;color:#ffffff;margin:0 0 4px 0">${esc(amName)}</p>
+      <p style="font-size:10pt;color:${GOLD};margin:0"><a href="mailto:${esc(amEmail)}" style="color:${GOLD};text-decoration:none">${esc(amEmail)}</a></p>
+    </td>
+  </tr>
+</table>
+` : ''}
+
+<table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin-top:24px">
+  <tr>
+    <td style="border-top:2px solid ${GOLD};padding-top:10px">
+      <p style="font-size:9pt;color:#9ca3af;margin:0">
+        Generated by M365 Security Policy Manager &middot; Affinity IT &middot; ${esc(date)} &middot; Confidential
+      </p>
     </td>
   </tr>
 </table>

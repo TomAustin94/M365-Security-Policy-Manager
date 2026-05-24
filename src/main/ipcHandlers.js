@@ -1303,3 +1303,5 @@ try {
   })
 
 }
+
+module.exports = { registerIpcHandlers }

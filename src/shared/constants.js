@@ -170,13 +170,11 @@ const _stateSimple = { key: 'state', label: 'Policy State', type: 'select', defa
 ]}
 
 const _excludeGroups = {
-  key: 'excludeGroups', label: 'Exclude Groups', type: 'text', default: '',
-  hint: 'Comma-separated Azure AD Group Object IDs to exclude from this policy',
+  key: 'excludeGroups', label: 'Exclude Groups', type: 'entity-groups', default: [],
 }
 
 const _excludeUsers = {
-  key: 'excludeUsers', label: 'Exclude Users', type: 'text', default: '',
-  hint: 'Comma-separated User Object IDs to exclude (e.g. break-glass accounts)',
+  key: 'excludeUsers', label: 'Exclude Users', type: 'entity-users', default: [],
 }
 
 const _assignedGroups = {

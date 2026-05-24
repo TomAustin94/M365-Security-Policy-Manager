@@ -8,12 +8,21 @@ $ErrorActionPreference = 'Stop'`
 
 function safe(s) { return (s || '').replace(/'/g, "''") }
 function psStr(s) { return `'${safe(s)}'` }
-function psArr(str) {
-  if (!str || !str.trim()) return '@()'
-  const items = str.split(',').map(s => s.trim()).filter(Boolean)
+function psArr(val) {
+  // Array of {id, displayName} objects (EntityPicker format) or plain ID strings
+  if (Array.isArray(val)) {
+    const ids = val.map(v => (typeof v === 'object' && v !== null ? v.id : v)).filter(Boolean)
+    return ids.length ? `@(${ids.map(i => `'${safe(i)}'`).join(', ')})` : '@()'
+  }
+  // Legacy comma-separated string
+  if (!val || !String(val).trim()) return '@()'
+  const items = String(val).split(',').map(s => s.trim()).filter(Boolean)
   return items.length ? `@(${items.map(i => `'${safe(i)}'`).join(', ')})` : '@()'
 }
-function hasItems(str) { return !!(str && str.trim()) }
+function hasItems(val) {
+  if (Array.isArray(val)) return val.length > 0
+  return !!(val && String(val).trim())
+}
 
 function policyBlock(id, name, body) {
   const indented = body.trim().split('\n').map(l => '    ' + l).join('\n')

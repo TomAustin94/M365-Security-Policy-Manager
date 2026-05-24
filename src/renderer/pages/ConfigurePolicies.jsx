@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { POLICIES, CATEGORY_FIELDS, POLICY_EXTRA_FIELDS } from '../../shared/constants'
+import EntityPicker from '../components/EntityPicker'
 
 // Merge category defaults + policy-specific extra fields
 function getFields(policy) {
@@ -9,12 +10,34 @@ function getFields(policy) {
 }
 
 function getDefaults(policy) {
-  return Object.fromEntries(getFields(policy).map(f => [f.key, f.default ?? '']))
+  return Object.fromEntries(getFields(policy).map(f => [f.key, Array.isArray(f.default) ? [] : (f.default ?? '')]))
+}
+
+function isDefaultValue(field, value) {
+  if (Array.isArray(field.default)) return !Array.isArray(value) || value.length === 0
+  return value === (field.default ?? '')
 }
 
 // Single field renderer
-function FieldInput({ field, value, onChange }) {
+function FieldInput({ field, value, onChange, hasSession }) {
   const cls = 'block w-full rounded border border-gray-300 px-2.5 py-1.5 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy'
+
+  if (field.type === 'entity-groups' || field.type === 'entity-users') {
+    const pickerType = field.type === 'entity-groups' ? 'groups' : 'users'
+    return (
+      <div className="space-y-1">
+        <EntityPicker
+          type={pickerType}
+          selected={Array.isArray(value) ? value : []}
+          onChange={onChange}
+          noSession={!hasSession}
+        />
+        {!hasSession && (
+          <p className="text-xs text-amber-600">Connect to a tenant to search — or paste an Object ID and press Enter.</p>
+        )}
+      </div>
+    )
+  }
 
   if (field.type === 'callout') {
     return (
@@ -60,7 +83,7 @@ function FieldInput({ field, value, onChange }) {
 }
 
 // One policy row (collapsed by default, expand to edit fields)
-function PolicyRow({ policy, config, onChange }) {
+function PolicyRow({ policy, config, onChange, hasSession }) {
   const [open, setOpen] = useState(false)
   const fields = getFields(policy)
   const state = config.state || fields.find(f => f.key === 'state')?.default || 'enabled'
@@ -78,7 +101,7 @@ function PolicyRow({ policy, config, onChange }) {
   }[state] || state
 
   // Count non-default, non-state customisations
-  const customCount = fields.filter(f => f.key !== 'state' && f.type !== 'callout' && config[f.key] !== undefined && config[f.key] !== (f.default ?? '')).length
+  const customCount = fields.filter(f => f.key !== 'state' && f.type !== 'callout' && config[f.key] !== undefined && !isDefaultValue(f, config[f.key])).length
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -106,19 +129,24 @@ function PolicyRow({ policy, config, onChange }) {
         <div className="border-t border-gray-100 px-4 py-4 bg-gray-50 space-y-3">
           <p className="text-xs text-gray-500 mb-2">{policy.description}</p>
           <div className="grid grid-cols-2 gap-3">
-            {fields.map(field => (
-              <div key={field.key} className={field.type === 'callout' || (field.type === 'text' && !field.options && fields.length <= 2) ? 'col-span-2' : ''}>
-                {field.type !== 'callout' && <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>}
-                <FieldInput
-                  field={field}
-                  value={config[field.key] ?? (field.default ?? '')}
-                  onChange={val => onChange({ ...config, [field.key]: val })}
-                />
-                {field.hint && (
-                  <p className="mt-1 text-xs text-gray-400">{field.hint}</p>
-                )}
-              </div>
-            ))}
+            {fields.map(field => {
+              const fullWidth = field.type === 'callout' || field.type === 'entity-groups' || field.type === 'entity-users' || (field.type === 'text' && !field.options && fields.length <= 2)
+              const defaultVal = Array.isArray(field.default) ? [] : (field.default ?? '')
+              return (
+                <div key={field.key} className={fullWidth ? 'col-span-2' : ''}>
+                  {field.type !== 'callout' && <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>}
+                  <FieldInput
+                    field={field}
+                    value={config[field.key] ?? defaultVal}
+                    onChange={val => onChange({ ...config, [field.key]: val })}
+                    hasSession={hasSession}
+                  />
+                  {field.hint && field.type !== 'entity-groups' && field.type !== 'entity-users' && (
+                    <p className="mt-1 text-xs text-gray-400">{field.hint}</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
           <button
             onClick={() => onChange(getDefaults(policy))}
@@ -132,7 +160,7 @@ function PolicyRow({ policy, config, onChange }) {
   )
 }
 
-export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolicyConfigs }) {
+export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolicyConfigs, hasSession }) {
   const [search, setSearch] = useState('')
   const [expandedCategory, setExpandedCategory] = useState(null)
 
@@ -173,8 +201,8 @@ export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolic
   const customisedCount = selectedPolicies.filter(p => {
     const cfg = policyConfigs[p.id]
     if (!cfg) return false
-    const defaults = getDefaults(p)
-    return Object.entries(cfg).some(([k, v]) => v !== defaults[k])
+    const fields = getFields(p)
+    return fields.some(f => cfg[f.key] !== undefined && !isDefaultValue(f, cfg[f.key]))
   }).length
 
   return (
@@ -245,6 +273,7 @@ export default function ConfigurePolicies({ selectedIds, policyConfigs, setPolic
                       policy={p}
                       config={getConfig(p)}
                       onChange={cfg => setConfig(p.id, cfg)}
+                      hasSession={hasSession}
                     />
                   ))}
                 </div>

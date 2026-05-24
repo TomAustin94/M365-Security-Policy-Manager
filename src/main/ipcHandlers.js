@@ -1299,7 +1299,7 @@ Write-Output "NAME_MAP_END"`,
     const script = `
 try {
   $q = '${safeQ}'
-  $uri = "https://graph.microsoft.com/v1.0/users?`$filter=startsWith(displayName,'$q') or startsWith(userPrincipalName,'$q')&`$count=true&`$top=15&`$select=id,displayName,mail,userPrincipalName"
+  $uri = "https://graph.microsoft.com/v1.0/users?\`$filter=startsWith(displayName,'$q') or startsWith(userPrincipalName,'$q')&\`$count=true&\`$top=15&\`$select=id,displayName,mail,userPrincipalName"
   $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
   $result = @($resp.value | ForEach-Object {
     @{ id = $_.id; displayName = $_.displayName; mail = if ($_.mail) { $_.mail } else { $_.userPrincipalName } }
@@ -1326,7 +1326,7 @@ try {
     const script = `
 try {
   $q = '${safeQ}'
-  $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=startsWith(displayName,'$q')&`$count=true&`$top=15&`$select=id,displayName,description"
+  $uri = "https://graph.microsoft.com/v1.0/groups?\`$filter=startsWith(displayName,'$q')&\`$count=true&\`$top=15&\`$select=id,displayName,description"
   $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
   $result = @($resp.value | ForEach-Object {
     @{ id = $_.id; displayName = $_.displayName; description = $_.description }

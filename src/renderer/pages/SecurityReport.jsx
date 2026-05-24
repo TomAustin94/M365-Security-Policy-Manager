@@ -765,8 +765,8 @@ function ReportView({ orgName, tenantPolicies, nameMap = {}, date, selectedBasel
         <div className="mt-2 space-y-4">
           <p className="text-sm text-gray-600">
             {savedModal?.type === 'pdf'
-              ? 'Your technical audit report is ready for review by the technical team or internal IT stakeholders. Share it directly or use it to support a remediation conversation.'
-              : 'Your client proposal is ready to share. Use it to walk through the findings with the client, or hand it to the sales team to support a follow-up conversation.'}
+              ? 'Your technical audit report has been exported and is ready to view.'
+              : 'Your client proposal has been exported and is ready to share.'}
           </p>
           <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Saved to</p>

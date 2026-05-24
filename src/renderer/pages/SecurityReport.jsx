@@ -654,24 +654,42 @@ function ReportView({ orgName, tenantPolicies, nameMap = {}, date, selectedBasel
         </div>
         <div className="ml-auto flex items-center gap-3">
           {/* Account manager selector */}
-          <div className="flex items-center gap-2 border-r border-gray-200 pr-3">
-            <span className="text-xs text-gray-400 whitespace-nowrap">Account Manager</span>
-            <div className="flex rounded-md border border-gray-200 overflow-hidden text-xs">
-              {ACCOUNT_MANAGERS.map(am => (
-                <button
-                  key={am.email}
-                  onClick={() => setAccountManager(am)}
-                  title={am.email}
-                  className={[
-                    'px-2.5 py-1.5 font-medium transition-colors border-r border-gray-200 last:border-0 whitespace-nowrap',
-                    accountManager.email === am.email
-                      ? 'bg-navy text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50',
-                  ].join(' ')}
-                >
-                  {am.name.split(' ').map((w, i) => i === 0 ? w : w[0]).join(' ')}
-                </button>
-              ))}
+          <div className="flex items-center gap-2 border-r border-gray-200 pr-4">
+            <span className="text-xs font-medium text-gray-400 whitespace-nowrap">Account Manager</span>
+            <div className="flex gap-1.5">
+              {ACCOUNT_MANAGERS.map((am, i) => {
+                const selected = accountManager.email === am.email
+                const avatarColors = ['bg-blue-500', 'bg-emerald-500', 'bg-violet-500']
+                const avatarBg = avatarColors[i]
+                const initials = am.name.split(' ').map(w => w[0]).join('')
+                const firstName = am.name.split(' ')[0]
+                return (
+                  <button
+                    key={am.email}
+                    onClick={() => setAccountManager(am)}
+                    title={am.email}
+                    className={[
+                      'flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs font-medium transition-all duration-150',
+                      selected
+                        ? 'bg-navy border-navy text-white shadow-sm'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:shadow-sm',
+                    ].join(' ')}
+                  >
+                    <div className={[
+                      'w-5 h-5 rounded-full flex items-center justify-center text-white font-bold leading-none flex-shrink-0 text-[10px]',
+                      selected ? 'bg-white/25' : avatarBg,
+                    ].join(' ')}>
+                      {initials}
+                    </div>
+                    <span className="whitespace-nowrap">{firstName}</span>
+                    {selected && (
+                      <svg className="w-3 h-3 ml-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           </div>
 

@@ -6,9 +6,14 @@ const NETWORK_PATTERNS = [
   'ERR_CONNECTION_REFUSED', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
 ]
 
+function isNetworkErr(err) {
+  const msg = err?.message || String(err)
+  return NETWORK_PATTERNS.some(p => msg.includes(p))
+}
+
 function classifyError(err) {
   const msg = err?.message || String(err)
-  if (NETWORK_PATTERNS.some(p => msg.includes(p))) {
+  if (isNetworkErr(err)) {
     return 'Could not reach the update server — check your internet connection and try again.'
   }
   if (msg.includes('Cannot parse releases feed') || msg.includes('Unable to find latest version')) {
@@ -18,6 +23,16 @@ function classifyError(err) {
     return 'Update file could not be found. Please download the latest version manually.'
   }
   return 'An error occurred while checking for updates. Please try again later.'
+}
+
+// Silent background check: errors are swallowed, network errors are retried once.
+function backgroundCheck() {
+  autoUpdater.checkForUpdates().catch((err) => {
+    if (isNetworkErr(err)) {
+      setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 60_000)
+    }
+    // All background errors are intentionally swallowed — no UI shown.
+  })
 }
 
 function setupAutoUpdater(win, isDev) {
@@ -56,24 +71,10 @@ function setupAutoUpdater(win, isDev) {
 
   autoUpdater.on('update-not-available', () => send('updater:not-available'))
 
-  let retryScheduled = false
-  autoUpdater.on('error', (err) => {
-    const friendly = classifyError(err)
-    const isNetworkError = NETWORK_PATTERNS.some(p => (err?.message || '').includes(p))
-
-    // For transient network errors on the background startup check, retry once
-    // after 60 s without surfacing an error to the user.
-    if (isNetworkError && !retryScheduled) {
-      retryScheduled = true
-      setTimeout(() => {
-        retryScheduled = false
-        autoUpdater.checkForUpdates().catch(() => {})
-      }, 60_000)
-      return
-    }
-
-    send('updater:error', friendly)
-  })
+  // Errors from user-triggered checks are surfaced; background check errors
+  // are swallowed by the backgroundCheck() catch, so this only fires for
+  // user-initiated calls (download failures, etc.).
+  autoUpdater.on('error', (err) => send('updater:error', classifyError(err)))
 
   autoUpdater.on('download-progress', (p) => {
     send('updater:progress', {
@@ -88,11 +89,13 @@ function setupAutoUpdater(win, isDev) {
     send('updater:downloaded', { version: info.version })
   })
 
+  // User-triggered check from Settings page — errors are surfaced to the UI.
   ipcMain.handle('updater:check', async () => {
     try {
       const result = await autoUpdater.checkForUpdates()
       return result ?? {}
     } catch (err) {
+      send('updater:error', classifyError(err))
       return { error: classifyError(err) }
     }
   })
@@ -101,8 +104,8 @@ function setupAutoUpdater(win, isDev) {
 
   ipcMain.handle('updater:install', () => autoUpdater.quitAndInstall(false, true))
 
-  // Silently check on startup after 5 s
-  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000)
+  // Silent background check on startup after 5 s
+  setTimeout(backgroundCheck, 5000)
 }
 
 module.exports = { setupAutoUpdater }

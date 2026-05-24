@@ -96,7 +96,7 @@ class PersistentPsSession {
     const loginHint = (authMode !== 'interactive' && credentials?.username)
       ? `-LoginHint '${String(credentials.username).replace(/'/g, "''")}'`
       : ''
-    const scopes = 'Policy.ReadWrite.ConditionalAccess Policy.Read.All DeviceManagementConfiguration.ReadWrite.All Organization.ReadWrite.All Directory.ReadWrite.All RoleManagement.ReadWrite.Directory AuditLog.Read.All'
+    const scopes = 'Policy.ReadWrite.ConditionalAccess Policy.Read.All DeviceManagementConfiguration.ReadWrite.All Organization.ReadWrite.All Directory.ReadWrite.All RoleManagement.ReadWrite.Directory AuditLog.Read.All User.Read.All Group.Read.All'
 
     const parseContext = (output) => {
       const ctxMatch = output.match(/CONTEXT_JSON_START\r?\n([\s\S]*?)\r?\nCONTEXT_JSON_END/)

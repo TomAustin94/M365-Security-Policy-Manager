@@ -605,7 +605,7 @@ function generateDocxHtml(orgName, policies, date, nameMap = {}, recommendations
 <table border="0" cellpadding="0" cellspacing="0" width="648" style="border-collapse:collapse;margin:20px 0 4px 0">
   <tr>
     <td style="padding:0 0 5px 0;font-size:12pt;font-weight:700;color:${NAV};border-bottom:2px solid ${GOLD}">${esc(r.name)} &mdash;</td>
-    <td style="padding:0 0 5px 8px;font-size:12pt;font-weight:700;color:${pctColor};border-bottom:2px solid ${GOLD};white-space:nowrap;width:1%">${pct}% compliant</td>
+    <td style="padding:0 0 5px 8px;font-size:12pt;font-weight:700;color:${pctColor};border-bottom:2px solid ${GOLD};width:110px">${pct}% compliant</td>
   </tr>
 </table>
 <p style="font-size:10pt;color:#6b7280;margin:4px 0 8px 0">${esc(r.description || '')}</p>
@@ -1015,33 +1015,13 @@ function registerIpcHandlers(win) {
 
   ipcMain.handle('policies:update', async (_, id, patch) => {
     const safeId = safe(id)
-
-    // Encode the users object and optional grantControls as base64 so PowerShell
-    // can deserialise them safely regardless of special characters.
-    const usersB64  = Buffer.from(JSON.stringify(patch.conditions?.users || {})).toString('base64')
-    const hasGrant  = Object.prototype.hasOwnProperty.call(patch, 'grantControls')
-    const grantB64  = hasGrant ? Buffer.from(JSON.stringify(patch.grantControls)).toString('base64') : ''
-    const safeDisplayName = safe(patch.displayName || '')
-    const safeState       = safe(patch.state || '')
-
-    // Do the GET + merge + PATCH in a single PS execution so there is no
-    // JSON round-trip that can corrupt nested objects.  CA policy PATCH
-    // replaces nested objects entirely, so we must send the full conditions
-    // with only the users sub-object overridden.
+    // The client sends the full conditions in camelCase (including existing
+    // applications, locations etc.) so no server-side GET is needed.
+    const patchJson = JSON.stringify(patch)
     const script = `
 try {
-  $current = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -ErrorAction Stop
-  $usersJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${usersB64}'))
-  $conditions = $current.conditions
-  $conditions['users'] = $usersJson | ConvertFrom-Json -AsHashtable
-  $body = @{
-    displayName = '${safeDisplayName}'
-    state       = '${safeState}'
-    conditions  = $conditions
-  }
-  ${hasGrant ? `$grantJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${grantB64}'))
-  $body['grantControls'] = if ($grantJson -eq 'null') { $null } else { $grantJson | ConvertFrom-Json -AsHashtable }` : ''}
-  Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body ($body | ConvertTo-Json -Depth 10 -Compress) -ContentType 'application/json'
+  $body = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from(patchJson).toString('base64')}'))
+  Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body $body -ContentType 'application/json'
   Write-Output "SUCCESS"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"

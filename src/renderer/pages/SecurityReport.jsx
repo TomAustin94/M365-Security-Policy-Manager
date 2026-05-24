@@ -627,7 +627,10 @@ function ReportView({ orgName, tenantPolicies, nameMap = {}, date, selectedBasel
     try {
       const result = await window.api.report.saveDocx(orgName, tenantPolicies, nameMap, recommendations, accountManager)
       if (result?.path) setSavedModal({ type: 'docx', path: result.path })
-    } catch {} finally {
+      else if (result?.error) alert(`Export failed: ${result.error}`)
+    } catch (e) {
+      alert(`Export failed: ${e.message}`)
+    } finally {
       setSavingDocx(false)
     }
   }

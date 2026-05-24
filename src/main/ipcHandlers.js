@@ -1025,7 +1025,30 @@ function registerIpcHandlers(win) {
 
   ipcMain.handle('policies:update', async (_, id, patch) => {
     const safeId = safe(id)
-    const patchJson = JSON.stringify(patch)
+
+    // CA policy PATCH replaces nested objects entirely — if we send
+    // conditions: { users: {...} } the API drops applications, locations, etc.
+    // Fetch the current policy first so we can merge conditions properly.
+    let finalPatch = { ...patch }
+    if (patch.conditions) {
+      try {
+        const fetchScript = `
+try {
+  $p = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -ErrorAction Stop
+  $p | ConvertTo-Json -Depth 10 -Compress
+} catch {
+  Write-Output "FETCH_ERROR: $($_.Exception.Message)"
+}`
+        const fetchOut = await psSession.run(fetchScript)
+        if (!fetchOut.includes('FETCH_ERROR:')) {
+          const currentPolicy = JSON.parse(fetchOut.trim())
+          const existingConditions = currentPolicy.conditions || {}
+          finalPatch.conditions = { ...existingConditions, ...patch.conditions }
+        }
+      } catch {}
+    }
+
+    const patchJson = JSON.stringify(finalPatch)
     const script = `
 try {
   $body = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from(patchJson).toString('base64')}'))
@@ -1251,8 +1274,8 @@ Write-Output "NAME_MAP_END"`,
     const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
     const amName  = accountManager?.name  || null
     const amEmail = accountManager?.email || null
-    const html = generateDocxHtml(orgName, policies, date, nameMap || {}, recommendations || [], amName, amEmail)
     try {
+      const html = generateDocxHtml(orgName, policies, date, nameMap || {}, recommendations || [], amName, amEmail)
       const buffer = await HTMLtoDOCX(html, null, {
         table: { row: { cantSplit: true } },
         footer: true,
@@ -1270,20 +1293,16 @@ Write-Output "NAME_MAP_END"`,
     if (!psSession.alive) return { items: [], error: 'No active session' }
     const safeQ = safe(query || '')
     if (!safeQ) return { items: [] }
-    // startsWith in Graph $filter requires ConsistencyLevel:eventual + $count.
-    // Run two separate queries (displayName and UPN/mail) then deduplicate,
-    // because OR across different properties also needs eventual consistency.
+    // Use Invoke-MgGraphRequest directly so we control headers and $count in the URL.
+    // startsWith across multiple properties in a single OR filter requires
+    // ConsistencyLevel:eventual + $count=true — both provided explicitly here.
     const script = `
 try {
   $q = '${safeQ}'
-  $byName = @(Get-MgUser -Filter "startsWith(displayName,'$q')" -ConsistencyLevel eventual -CountVariable c1 -Top 10 -Select 'id,displayName,mail,userPrincipalName' -ErrorAction SilentlyContinue)
-  $byUpn  = @(Get-MgUser -Filter "startsWith(userPrincipalName,'$q')" -ConsistencyLevel eventual -CountVariable c2 -Top 10 -Select 'id,displayName,mail,userPrincipalName' -ErrorAction SilentlyContinue)
-  $seen = @{}; $combined = @()
-  foreach ($u in ($byUpn + $byName)) {
-    if ($u -and -not $seen.ContainsKey($u.Id)) { $seen[$u.Id] = $true; $combined += $u }
-  }
-  $result = @($combined | Select-Object -First 15 | ForEach-Object {
-    @{ id = $_.Id; displayName = $_.DisplayName; mail = if ($_.Mail) { $_.Mail } else { $_.UserPrincipalName } }
+  $uri = "https://graph.microsoft.com/v1.0/users?`$filter=startsWith(displayName,'$q') or startsWith(userPrincipalName,'$q')&`$count=true&`$top=15&`$select=id,displayName,mail,userPrincipalName"
+  $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
+  $result = @($resp.value | ForEach-Object {
+    @{ id = $_.id; displayName = $_.displayName; mail = if ($_.mail) { $_.mail } else { $_.userPrincipalName } }
   })
   if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
 } catch {
@@ -1307,10 +1326,11 @@ try {
     const script = `
 try {
   $q = '${safeQ}'
-  $groups = Get-MgGroup -Filter "startsWith(displayName,'$q')" -ConsistencyLevel eventual -CountVariable c1 -Top 15 -Select 'id,displayName,description' -ErrorAction Stop
-  $result = @($groups) | ForEach-Object {
-    @{ id = $_.Id; displayName = $_.DisplayName; description = $_.Description }
-  }
+  $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=startsWith(displayName,'$q')&`$count=true&`$top=15&`$select=id,displayName,description"
+  $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -Headers @{ 'ConsistencyLevel' = 'eventual' } -ErrorAction Stop
+  $result = @($resp.value | ForEach-Object {
+    @{ id = $_.id; displayName = $_.displayName; description = $_.description }
+  })
   if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"

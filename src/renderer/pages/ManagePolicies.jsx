@@ -420,9 +420,11 @@ export default function ManagePolicies() {
     if (!window.api || !editTarget) return
     setSaveLoading(true)
     try {
-      await window.api.policies.update(editTarget.Id, patch)
+      const result = await window.api.policies.update(editTarget.Id, patch)
       setPolicies(ps => ps.map(p => {
         if (p.Id !== editTarget.Id) return p
+        // Use the authoritative Graph response body if returned; fall back to optimistic update
+        if (result?.policy && Object.keys(result.policy).length > 0) return result.policy
         return {
           ...p,
           ...(patch.displayName !== undefined && { DisplayName: patch.displayName }),

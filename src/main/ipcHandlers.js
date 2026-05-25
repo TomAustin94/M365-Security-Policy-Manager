@@ -1467,6 +1467,7 @@ function registerIpcHandlers(win) {
 
   ipcMain.handle('policies:update', async (_, id, patch) => {
     const safeId = safe(id)
+    logger.info(`policies:update id=${id} body=${JSON.stringify(patch)}`)
     const b64 = Buffer.from(JSON.stringify(patch)).toString('base64')
     const script = `
 $ctx = Get-MgContext
@@ -1474,19 +1475,20 @@ $scopes = if ($ctx -and $ctx.Scopes) { @($ctx.Scopes) } else { @() }
 if (-not ($scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
   Write-Output "ERROR_NO_SCOPE: Token lacks Policy.ReadWrite.ConditionalAccess. Disconnect and reconnect to re-authenticate."
 } else {
-  # Check if the policy is Microsoft-managed (templateId set = read-only)
   try {
     $pol = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}?\`$select=id,templateId,displayName" -ErrorAction Stop
     if ($pol.templateId) {
-      Write-Output "ERROR_READONLY: Policy '$($pol.displayName)' is Microsoft-managed (templateId: $($pol.templateId)) and cannot be modified through the API. You can only enable or disable it."
+      Write-Output "ERROR_READONLY: Policy '$($pol.displayName)' is Microsoft-managed (templateId: $($pol.templateId)) and cannot be modified through the API."
     } else {
       try {
         $body = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'))
-        Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body $body -ContentType 'application/json' | Out-Null
+        $patchResult = Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body $body -ContentType 'application/json'
+        Write-Output "PATCH_JSON_START"
+        if ($patchResult) { $patchResult | ConvertTo-Json -Depth 10 -Compress } else { Write-Output '{}' }
+        Write-Output "PATCH_JSON_END"
         Write-Output "SUCCESS"
       } catch {
         $errMsg = $_.Exception.Message
-        # Try to extract the actual Graph API error body from the HTTP response
         $graphCode = ''; $graphMsg = ''
         try {
           $resp = $_.Exception | Select-Object -ExpandProperty Response -ErrorAction SilentlyContinue
@@ -1515,8 +1517,8 @@ if (-not ($scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
     Write-Output "ERROR: $($_.Exception.Message)"
   }
 }`
-    const output = await psSession.run(script)
-    const lines = output.split('\n')
+    const lines = []
+    await psSession.run(script, l => lines.push(l))
     const noScope = lines.find(l => l.startsWith('ERROR_NO_SCOPE:'))
     if (noScope) throw new Error(noScope.slice('ERROR_NO_SCOPE:'.length).trim())
     const readOnly = lines.find(l => l.startsWith('ERROR_READONLY:'))
@@ -1524,11 +1526,25 @@ if (-not ($scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
     const err403 = lines.find(l => l.startsWith('ERROR_403:'))
     if (err403) {
       const detail = err403.slice('ERROR_403:'.length).trim()
-      throw new Error(`Access denied (403 Forbidden).${detail ? ` Graph error: ${detail}.` : ''} Your account has the correct scope but Graph rejected the request — this can happen if your Global Admin role is assigned via PIM eligibility but not currently activated, or if the token was issued before the role was assigned. Try disconnecting and reconnecting to get a fresh token.`)
+      throw new Error(`Access denied (403 Forbidden).${detail ? ` Graph error: ${detail}.` : ''} Try disconnecting and reconnecting to get a fresh token.`)
     }
     const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
-    return { success: lines.some(l => l.trim() === 'SUCCESS') }
+
+    // Parse the PATCH response body Graph returned
+    const pStart = lines.indexOf('PATCH_JSON_START')
+    const pEnd = lines.indexOf('PATCH_JSON_END')
+    let updatedPolicy = null
+    if (pStart !== -1 && pEnd > pStart) {
+      try {
+        const raw = lines.slice(pStart + 1, pEnd).join('')
+        if (raw && raw !== '{}') {
+          updatedPolicy = JSON.parse(raw)
+          logger.info(`policies:update graph response keys: ${Object.keys(updatedPolicy).join(', ')}`)
+        }
+      } catch {}
+    }
+    return { success: lines.some(l => l.trim() === 'SUCCESS'), policy: updatedPolicy }
   })
 
   ipcMain.handle('policies:delete', async (_, id) => {

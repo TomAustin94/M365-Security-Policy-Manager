@@ -1489,23 +1489,15 @@ if (-not ($scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
         Write-Output "SUCCESS"
       } catch {
         $errMsg = $_.Exception.Message
-        $graphCode = ''; $graphMsg = ''
+        $detail = ''
         try {
-          $resp = $_.Exception | Select-Object -ExpandProperty Response -ErrorAction SilentlyContinue
-          if ($resp) {
-            $bodyStr = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-            $parsed = $bodyStr | ConvertFrom-Json -ErrorAction SilentlyContinue
-            if ($parsed -and $parsed.error) { $graphCode = $parsed.error.code; $graphMsg = $parsed.error.message }
+          $edm = $_.ErrorDetails.Message
+          if ($edm) {
+            $parsed = $edm | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($parsed -and $parsed.error) { $detail = "$($parsed.error.code): $($parsed.error.message)" }
+            else { $detail = $edm }
           }
         } catch {}
-        if (-not $graphCode) {
-          try {
-            $inner = $_.Exception; while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
-            $bodyStr = $inner.Message | ConvertFrom-Json -ErrorAction SilentlyContinue
-            if ($bodyStr -and $bodyStr.error) { $graphCode = $bodyStr.error.code; $graphMsg = $bodyStr.error.message }
-          } catch {}
-        }
-        $detail = if ($graphCode) { "$graphCode: $graphMsg" } else { $_.ErrorDetails.Message }
         if ($errMsg -match '403|Forbidden') {
           Write-Output "ERROR_403: $detail"
         } else {
@@ -1518,7 +1510,7 @@ if (-not ($scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
   }
 }`
     const lines = []
-    await psSession.run(script, l => lines.push(l))
+    await psSession.run(script, l => lines.push(l), 120000)
     const noScope = lines.find(l => l.startsWith('ERROR_NO_SCOPE:'))
     if (noScope) throw new Error(noScope.slice('ERROR_NO_SCOPE:'.length).trim())
     const readOnly = lines.find(l => l.startsWith('ERROR_READONLY:'))

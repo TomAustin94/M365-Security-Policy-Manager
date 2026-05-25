@@ -37,61 +37,71 @@ function cleanForGraph(v) {
 // Build a safe, explicit Graph API conditions object by extracting only known fields
 // using pick() for PascalCase/camelCase tolerance. Avoids AdditionalProperties
 // corruption that cleanForGraph causes at the conditions level.
+// Empty arrays and empty/incomplete sub-objects are omitted so Graph doesn't reject them.
 function buildGraphConditions(rawCond, usersOverride) {
   const result = { users: usersOverride }
+  const arr = (v) => (Array.isArray(v) && v.length > 0 ? v : null)
 
   const apps = pick(rawCond, 'Applications', 'applications')
   if (apps) {
     const a = {}
-    const incA = pick(apps, 'IncludeApplications', 'includeApplications')
+    const incA = arr(pick(apps, 'IncludeApplications', 'includeApplications'))
     if (incA) a.includeApplications = incA
-    const excA = pick(apps, 'ExcludeApplications', 'excludeApplications')
+    const excA = arr(pick(apps, 'ExcludeApplications', 'excludeApplications'))
     if (excA) a.excludeApplications = excA
-    const ua = pick(apps, 'IncludeUserActions', 'includeUserActions')
+    const ua = arr(pick(apps, 'IncludeUserActions', 'includeUserActions'))
     if (ua) a.includeUserActions = ua
-    const authCtx = pick(apps, 'IncludeAuthenticationContextClassReferences', 'includeAuthenticationContextClassReferences')
+    const authCtx = arr(pick(apps, 'IncludeAuthenticationContextClassReferences', 'includeAuthenticationContextClassReferences'))
     if (authCtx) a.includeAuthenticationContextClassReferences = authCtx
     const appFilter = pick(apps, 'ApplicationFilter', 'applicationFilter')
-    if (appFilter) a.applicationFilter = { mode: pick(appFilter, 'Mode', 'mode'), rule: pick(appFilter, 'Rule', 'rule') }
-    result.applications = a
+    if (appFilter) {
+      const mode = pick(appFilter, 'Mode', 'mode')
+      const rule = pick(appFilter, 'Rule', 'rule')
+      if (mode && rule) a.applicationFilter = { mode, rule }
+    }
+    if (Object.keys(a).length) result.applications = a
   }
 
-  const cat = pick(rawCond, 'ClientAppTypes', 'clientAppTypes')
+  const cat = arr(pick(rawCond, 'ClientAppTypes', 'clientAppTypes'))
   if (cat) result.clientAppTypes = cat
 
   const plat = pick(rawCond, 'Platforms', 'platforms')
   if (plat) {
     const p = {}
-    const incP = pick(plat, 'IncludePlatforms', 'includePlatforms')
+    const incP = arr(pick(plat, 'IncludePlatforms', 'includePlatforms'))
     if (incP) p.includePlatforms = incP
-    const excP = pick(plat, 'ExcludePlatforms', 'excludePlatforms')
+    const excP = arr(pick(plat, 'ExcludePlatforms', 'excludePlatforms'))
     if (excP) p.excludePlatforms = excP
-    result.platforms = p
+    if (Object.keys(p).length) result.platforms = p
   }
 
   const loc = pick(rawCond, 'Locations', 'locations')
   if (loc) {
     const l = {}
-    const incL = pick(loc, 'IncludeLocations', 'includeLocations')
+    const incL = arr(pick(loc, 'IncludeLocations', 'includeLocations'))
     if (incL) l.includeLocations = incL
-    const excL = pick(loc, 'ExcludeLocations', 'excludeLocations')
+    const excL = arr(pick(loc, 'ExcludeLocations', 'excludeLocations'))
     if (excL) l.excludeLocations = excL
-    result.locations = l
+    if (Object.keys(l).length) result.locations = l
   }
 
-  const srl = pick(rawCond, 'SignInRiskLevels', 'signInRiskLevels')
+  const srl = arr(pick(rawCond, 'SignInRiskLevels', 'signInRiskLevels'))
   if (srl) result.signInRiskLevels = srl
 
-  const url = pick(rawCond, 'UserRiskLevels', 'userRiskLevels')
+  const url = arr(pick(rawCond, 'UserRiskLevels', 'userRiskLevels'))
   if (url) result.userRiskLevels = url
 
-  const sprl = pick(rawCond, 'ServicePrincipalRiskLevels', 'servicePrincipalRiskLevels')
+  const sprl = arr(pick(rawCond, 'ServicePrincipalRiskLevels', 'servicePrincipalRiskLevels'))
   if (sprl) result.servicePrincipalRiskLevels = sprl
 
   const dev = pick(rawCond, 'Devices', 'devices')
   if (dev) {
     const df = pick(dev, 'DeviceFilter', 'deviceFilter')
-    if (df) result.devices = { deviceFilter: { mode: pick(df, 'Mode', 'mode'), rule: pick(df, 'Rule', 'rule') } }
+    if (df) {
+      const mode = pick(df, 'Mode', 'mode')
+      const rule = pick(df, 'Rule', 'rule')
+      if (mode && rule) result.devices = { deviceFilter: { mode, rule } }
+    }
   }
 
   return result
@@ -227,7 +237,10 @@ function PolicyEditor({ policy, onSave, onCancel, saving, noSession }) {
     if (incGroups.length) usersObj.includeGroups = incGroups
     if (incRoles.length)  usersObj.includeRoles  = incRoles
     if (excRoles.length)  usersObj.excludeRoles  = excRoles
-    if (incGuests)        usersObj.includeGuestsOrExternalUsers = cleanForGraph(incGuests)
+    if (incGuests) {
+      const guestTypes = pick(incGuests, 'GuestOrExternalUserTypes', 'guestOrExternalUserTypes')
+      if (guestTypes) usersObj.includeGuestsOrExternalUsers = cleanForGraph(incGuests)
+    }
     if (excGrpIds.length)  usersObj.excludeGroups = excGrpIds
     if (excUserIds.length) usersObj.excludeUsers  = excUserIds
 

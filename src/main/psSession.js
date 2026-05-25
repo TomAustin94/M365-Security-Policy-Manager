@@ -113,10 +113,12 @@ class PersistentPsSession {
 try {
   Connect-MgGraph -ContextScope CurrentUser -Scopes "${scopes}" -NoWelcome -Silent -ErrorAction Stop
   $ctx = Get-MgContext
-  if ($ctx) {
+  if ($ctx -and ($ctx.Scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
     Write-Output "CONTEXT_JSON_START"
     @{ Account = $ctx.Account; TenantId = $ctx.TenantId } | ConvertTo-Json
     Write-Output "CONTEXT_JSON_END"
+  } elseif ($ctx) {
+    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
   }
 } catch {}
 `, null, 30000)

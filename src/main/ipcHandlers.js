@@ -798,6 +798,457 @@ can assist with the design, testing (Report Only mode), and phased enforcement o
 </html>`
 }
 
+async function generateDocxBuffer(orgName, policies, date, nameMap = {}, recommendations = [], amName = null, amEmail = null) {
+  const {
+    Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+    Header, Footer, AlignmentType, HeadingLevel, BorderStyle, WidthType,
+    ShadingType, VerticalAlign, PageBreak, LevelFormat,
+    TabStopType, SimpleField, ImageRun
+  } = require('docx')
+
+  const NAVY = '1B2A4A', MID = '2E5196', ACCENT = '4A90D9', LIGHT = 'EBF2FB'
+  const CREAM = 'F7F9FC', RED = 'C0392B', AMBER = 'D68910', WHITE = 'FFFFFF'
+  const BORDER = 'C8D8EC', GOLD = 'E8A020'
+
+  const cellBorder = (color = BORDER) => ({ style: BorderStyle.SINGLE, size: 1, color })
+  const allBorders = (color = BORDER) => ({
+    top: cellBorder(color), bottom: cellBorder(color),
+    left: cellBorder(color), right: cellBorder(color)
+  })
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: WHITE }
+
+  function hRule() {
+    return new Paragraph({
+      spacing: { before: 0, after: 0 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: GOLD, space: 1 } },
+      children: []
+    })
+  }
+
+  function spacer(pts = 120) {
+    return new Paragraph({ spacing: { before: 0, after: pts }, children: [] })
+  }
+
+  function priorityBadge(text) {
+    const color = text === 'Critical' ? RED : AMBER
+    return new TextRun({
+      text: ` ${text} `, font: 'Arial', size: 16, bold: true, color: WHITE,
+      shading: { fill: color, type: ShadingType.CLEAR }
+    })
+  }
+
+  function sectionHeading(text) {
+    return [
+      new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text, font: 'Arial', size: 36, bold: true, color: NAVY })] }),
+      hRule(),
+      spacer(80)
+    ]
+  }
+
+  function subHeading(text) {
+    return [
+      spacer(80),
+      new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text, font: 'Arial', size: 26, bold: true, color: MID })] }),
+      spacer(40)
+    ]
+  }
+
+  function statBox(label, value, highlight = false) {
+    return new TableCell({
+      borders: allBorders(BORDER),
+      shading: { fill: highlight ? MID : LIGHT, type: ShadingType.CLEAR },
+      margins: { top: 160, bottom: 160, left: 200, right: 200 },
+      width: { size: 2460, type: WidthType.DXA },
+      verticalAlign: VerticalAlign.CENTER,
+      children: [
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(value), font: 'Arial', size: 52, bold: true, color: highlight ? WHITE : NAVY })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: label, font: 'Arial', size: 18, color: highlight ? 'DDDDDD' : '555555' })] })
+      ]
+    })
+  }
+
+  function tableHeaderRow(labels, widths) {
+    return new TableRow({
+      tableHeader: true,
+      children: labels.map((label, i) => new TableCell({
+        borders: allBorders(MID),
+        shading: { fill: NAVY, type: ShadingType.CLEAR },
+        margins: { top: 100, bottom: 100, left: 120, right: 120 },
+        width: { size: widths[i], type: WidthType.DXA },
+        children: [new Paragraph({ children: [new TextRun({ text: label, font: 'Arial', size: 20, bold: true, color: WHITE })] })]
+      }))
+    })
+  }
+
+  function tableBodyRow(cells, widths, shadeAlt = false) {
+    return new TableRow({
+      children: cells.map((cell, i) => new TableCell({
+        borders: allBorders(BORDER),
+        shading: { fill: shadeAlt ? CREAM : WHITE, type: ShadingType.CLEAR },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        width: { size: widths[i], type: WidthType.DXA },
+        children: [new Paragraph({
+          children: Array.isArray(cell) ? cell : [new TextRun({ text: String(cell ?? ''), font: 'Arial', size: 20, color: '333333' })]
+        })]
+      }))
+    })
+  }
+
+  const pv = (obj, ...keys) => { for (const k of keys) { if (obj?.[k] != null) return obj[k] } return null }
+  const stateOf = p => p.State || p.state || 'unknown'
+  const stateLabel = s => ({ enabled: 'Enabled', disabled: 'Disabled', enabledForReportingButNotEnforced: 'Report Only' }[s] || 'Unknown')
+  const CTRL_LABELS = {
+    mfa: 'Require MFA', compliantDevice: 'Require Compliant Device', domainJoinedDevice: 'Require Hybrid AD Join',
+    approvedApplication: 'Require Approved App', compliantApplication: 'Require App Protection Policy',
+    block: 'Block Access', passwordChange: 'Require Password Change'
+  }
+  const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
+
+  const POLICY_DESC = {
+    CA001: 'Requires all users to complete MFA on every sign-in — the single most impactful control available.',
+    CA002: 'Blocks legacy authentication protocols which cannot enforce MFA and account for most password-spray attacks.',
+    CA003: 'Enforces MFA for privileged roles (Global Admin, Security Admin, Helpdesk Admin, etc.), protecting your highest-value accounts.',
+    CA004: 'Restricts access to devices enrolled in Intune and marked compliant, or hybrid Azure AD joined.',
+    CA006: 'Requires MFA before accessing Microsoft Azure management interfaces, protecting critical cloud infrastructure.',
+    CA008: 'Forces a password reset when a user’s risk is detected as High (e.g. leaked credentials).',
+    CA009: 'Requires step-up MFA when a sign-in is flagged as medium or high risk.',
+    CA011: 'Restricts iOS device access to Intune-approved apps with app protection policies.',
+    CA012: 'Restricts Android device access to Intune-approved apps with app protection policies.',
+    CA014: 'Requires MFA for guest and external users accessing shared resources.',
+    CA016: 'Prevents persistent browser sessions, requiring re-authentication when the browser is closed.',
+    CA018: 'Blocks sign-ins from unmanaged or unsupported device platforms.',
+    CA019: 'Secures MFA method registration through Conditional Access.',
+    CA026: 'Requires phishing-resistant MFA (FIDO2 / Windows Hello for Business) for admin accounts.',
+    CA030: 'Enables app-enforced restrictions in SharePoint and Exchange for unmanaged devices.',
+    CA033: 'Requires MFA for all Microsoft 365 admin portals (Entra, Exchange, Teams, Intune).',
+    CA045: 'Limits admin sessions to one hour with mandatory re-authentication.',
+    IP001: 'Automatically enforces MFA for users whose account risk is High in Entra ID Identity Protection.',
+    IP002: 'Enforces MFA for sign-ins detected as risky by Identity Protection.',
+    IP003: 'Forces a password change for users with High risk (leaked credentials detected).',
+  }
+
+  function fmtUsers(u) {
+    if (!u) return null
+    const incU = pv(u, 'IncludeUsers', 'includeUsers') || []
+    const incR = pv(u, 'IncludeRoles', 'includeRoles') || []
+    const incG = pv(u, 'IncludeGroups', 'includeGroups') || []
+    if (incU.some(x => x.toLowerCase() === 'all')) return 'All Users'
+    if (incU.some(x => x.toLowerCase() === 'guestsorexternalusers')) return 'Guests & External Users'
+    const parts = [
+      ...(incR.length ? [`${incR.length} admin role(s)`] : []),
+      ...(incG.length ? [`${incG.length} group(s)`] : []),
+      ...(incU.length ? [`${incU.length} user(s)`] : [])
+    ]
+    return parts.join(', ') || null
+  }
+
+  function fmtGrant(g) {
+    if (!g) return null
+    const controls = (pv(g, 'BuiltInControls', 'builtInControls') || []).map(c => CTRL_LABELS[c] || c)
+    if (pv(g, 'AuthenticationStrength', 'authenticationStrength')) controls.push('Phishing-Resistant MFA')
+    return controls.join(` ${(pv(g, 'Operator', 'operator') || 'OR').toUpperCase()} `) || null
+  }
+
+  const enabled = policies.filter(p => stateOf(p) === 'enabled')
+  const reportOnly = policies.filter(p => stateOf(p) === 'enabledForReportingButNotEnforced')
+  const disabled = policies.filter(p => stateOf(p) === 'disabled')
+
+  // Cover image
+  const _imgBase = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..')
+  let coverImageParagraph
+  try {
+    const imgData = fs.readFileSync(path.join(_imgBase, 'assets/affinity-header.png'))
+    const iw = (imgData[16] << 24) | (imgData[17] << 16) | (imgData[18] << 8) | imgData[19]
+    const ih = (imgData[20] << 24) | (imgData[21] << 16) | (imgData[22] << 8) | imgData[23]
+    const docW = 656, docH = iw > 0 ? Math.round(docW * ih / iw) : 164
+    coverImageParagraph = new Paragraph({
+      spacing: { before: 0, after: 0 },
+      children: [new ImageRun({ type: 'png', data: imgData, transformation: { width: docW, height: docH } })]
+    })
+  } catch {
+    try {
+      const imgData = fs.readFileSync(path.join(_imgBase, 'assets/affinity_it_services_ltd_cover.jpeg'))
+      coverImageParagraph = new Paragraph({
+        spacing: { before: 0, after: 0 },
+        children: [new ImageRun({ type: 'jpeg', data: imgData, transformation: { width: 656, height: 164 } })]
+      })
+    } catch {
+      coverImageParagraph = new Paragraph({ children: [] })
+    }
+  }
+
+  const coverPage = [
+    coverImageParagraph,
+    spacer(400),
+    new Paragraph({ spacing: { before: 0, after: 80 }, children: [new TextRun({ text: 'MICROSOFT 365', font: 'Arial', size: 52, bold: true, color: MID })] }),
+    new Paragraph({ spacing: { before: 0, after: 120 }, children: [new TextRun({ text: 'SECURITY POLICY REPORT', font: 'Arial', size: 52, bold: true, color: NAVY })] }),
+    new Paragraph({ spacing: { before: 0, after: 0 }, border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: GOLD, space: 1 } }, children: [] }),
+    spacer(240),
+    new Paragraph({ spacing: { before: 0, after: 60 }, children: [new TextRun({ text: orgName || 'Tenant', font: 'Arial', size: 36, bold: true, color: NAVY })] }),
+    new Paragraph({ spacing: { before: 0, after: 60 }, children: [new TextRun({ text: date, font: 'Arial', size: 24, color: '666666' })] }),
+    spacer(240),
+    new Table({
+      width: { size: 9840, type: WidthType.DXA },
+      columnWidths: [9840],
+      rows: [new TableRow({ children: [new TableCell({
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 6, color: MID },
+          bottom: { style: BorderStyle.SINGLE, size: 6, color: MID },
+          left: { style: BorderStyle.SINGLE, size: 24, color: GOLD },
+          right: { style: BorderStyle.SINGLE, size: 6, color: MID }
+        },
+        shading: { fill: LIGHT, type: ShadingType.CLEAR },
+        margins: { top: 160, bottom: 160, left: 240, right: 240 },
+        width: { size: 9840, type: WidthType.DXA },
+        children: [new Paragraph({ children: [
+          new TextRun({ text: 'Confidential', font: 'Arial', size: 20, bold: true, color: MID }),
+          new TextRun({ text: '  —  Prepared by Affinity IT for ', font: 'Arial', size: 20, color: '444444' }),
+          new TextRun({ text: orgName || 'your organisation', font: 'Arial', size: 20, bold: true, color: NAVY }),
+          new TextRun({ text: '. This report provides a full analysis of your Microsoft 365 Conditional Access security configuration, identifies gaps against Microsoft’s recommended security baselines, and sets out a prioritised action plan.', font: 'Arial', size: 20, color: '444444' })
+        ] })]
+      })]})],
+    }),
+    new Paragraph({ children: [new PageBreak()] })
+  ]
+
+  const pageHeader = new Header({
+    children: [new Paragraph({
+      tabStops: [{ type: TabStopType.RIGHT, position: 9840 }],
+      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: GOLD, space: 4 } },
+      children: [
+        new TextRun({ text: `${orgName || 'Security Report'}  ·  Microsoft 365 Security Report`, font: 'Arial', size: 18, color: '888888' }),
+        new TextRun({ text: '\tConfidential', font: 'Arial', size: 18, color: '888888' })
+      ]
+    })]
+  })
+
+  const pageFooter = new Footer({
+    children: [new Paragraph({
+      tabStops: [{ type: TabStopType.RIGHT, position: 9840 }],
+      border: { top: { style: BorderStyle.SINGLE, size: 4, color: ACCENT, space: 4 } },
+      children: [
+        new TextRun({ text: `Generated by M365 Security Policy Manager  ·  Affinity IT  ·  ${date}${amName ? `  ·  ${amName}` : ''}`, font: 'Arial', size: 16, color: '888888' }),
+        new TextRun({ text: '\tPage ', font: 'Arial', size: 16, color: '888888' }),
+        new SimpleField('PAGE')
+      ]
+    })]
+  })
+
+  const execSummary = [
+    ...sectionHeading('Executive Summary'),
+    new Paragraph({
+      spacing: { before: 0, after: 160 },
+      children: [
+        new TextRun({ text: 'This report documents the Conditional Access policy configuration for ', font: 'Arial', size: 22, color: '333333' }),
+        new TextRun({ text: orgName || 'your organisation', font: 'Arial', size: 22, bold: true, color: NAVY }),
+        new TextRun({ text: ' as of ', font: 'Arial', size: 22, color: '333333' }),
+        new TextRun({ text: date, font: 'Arial', size: 22, bold: true, color: NAVY }),
+        new TextRun({ text: '. Conditional Access is the enforcement layer in Microsoft Entra ID that controls who can access cloud applications, from which devices and locations, and under what conditions.', font: 'Arial', size: 22, color: '333333' })
+      ]
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 240 },
+      children: [
+        new TextRun({ text: 'The assessment reviewed ', font: 'Arial', size: 22, color: '333333' }),
+        new TextRun({ text: `${policies.length} Conditional Access ${policies.length === 1 ? 'policy' : 'policies'}`, font: 'Arial', size: 22, bold: true, color: MID }),
+        new TextRun({ text: ' and compared the configuration against Microsoft’s recommended security baselines.', font: 'Arial', size: 22, color: '333333' })
+      ]
+    }),
+    new Table({
+      width: { size: 9840, type: WidthType.DXA },
+      columnWidths: [2460, 2460, 2460, 2460],
+      rows: [new TableRow({ children: [
+        statBox('Total Policies', String(policies.length), true),
+        statBox('Active (Enforced)', String(enabled.length)),
+        statBox('Audit Mode Only', String(reportOnly.length)),
+        statBox('Disabled', String(disabled.length))
+      ]})]
+    }),
+    spacer(320)
+  ]
+
+  const baselineSection = recommendations.length > 0 ? [
+    ...sectionHeading('Baseline Compliance Overview'),
+    new Paragraph({
+      spacing: { before: 0, after: 200 },
+      children: [new TextRun({ text: 'The table below shows how the current Conditional Access configuration compares against Microsoft’s recommended security baselines. Each baseline represents a curated set of policies addressing a specific security scenario.', font: 'Arial', size: 22, color: '333333' })]
+    }),
+    new Table({
+      width: { size: 9840, type: WidthType.DXA },
+      columnWidths: [2800, 1600, 2160, 3080],
+      rows: [
+        tableHeaderRow(['Baseline', 'Score', 'Policies Detected', 'Finding'], [2800, 1600, 2160, 3080]),
+        ...recommendations.map((r, i) => {
+          const pct = r.totalCaCount > 0 ? Math.round((r.presentCount / r.totalCaCount) * 100) : 100
+          const finding = r.missingItems.length === 0 ? '✓ Compliant' : `${r.missingItems.length} gap${r.missingItems.length > 1 ? 's' : ''} identified`
+          return tableBodyRow([r.name, `${pct}%`, `${r.presentCount} / ${r.totalCaCount}`, finding], [2800, 1600, 2160, 3080], i % 2 === 1)
+        })
+      ]
+    }),
+    spacer(320)
+  ] : []
+
+  const hasGaps = recommendations.some(r => r.missingItems.length > 0)
+
+  const gapDetailRows = recommendations.filter(r => r.missingItems.length > 0).flatMap(r => {
+    const pct = r.totalCaCount > 0 ? Math.round((r.presentCount / r.totalCaCount) * 100) : 100
+    const sorted = [...r.missingItems].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+    return [
+      ...subHeading(`${r.name} — ${pct}% Compliant`),
+      ...(r.description ? [new Paragraph({ spacing: { before: 0, after: 160 }, children: [new TextRun({ text: r.description, font: 'Arial', size: 22, color: '333333' })] })] : []),
+      new Table({
+        width: { size: 9840, type: WidthType.DXA },
+        columnWidths: [1000, 2200, 1200, 5440],
+        rows: [
+          tableHeaderRow(['Policy ID', 'Recommended Policy', 'Priority', 'What it protects against'], [1000, 2200, 1200, 5440]),
+          ...sorted.map((item, i) => tableBodyRow([
+            item.id,
+            item.name,
+            [priorityBadge(item.severity.charAt(0).toUpperCase() + item.severity.slice(1))],
+            POLICY_DESC[item.id] || ''
+          ], [1000, 2200, 1200, 5440], i % 2 === 1))
+        ]
+      }),
+      spacer(200)
+    ]
+  })
+
+  const gapAnalysisSection = hasGaps ? [
+    ...sectionHeading('Gap Analysis & Recommendations'),
+    new Paragraph({
+      spacing: { before: 0, after: 200 },
+      children: [new TextRun({ text: 'The following section details each missing policy, its business risk, and the specific protection it provides. Policies are matched by ID in their display name or by their configuration, so any existing policy with the correct settings is detected regardless of its name.', font: 'Arial', size: 22, color: '333333' })]
+    }),
+    ...gapDetailRows
+  ] : []
+
+  const seen = new Set()
+  const allMissing = []
+  for (const r of recommendations) {
+    for (const item of r.missingItems) {
+      if (!seen.has(item.id)) { seen.add(item.id); allMissing.push(item) }
+    }
+  }
+  allMissing.sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+
+  const actionPlanSection = allMissing.length > 0 ? [
+    ...sectionHeading('Recommended Action Plan'),
+    new Paragraph({
+      spacing: { before: 0, after: 200 },
+      children: [new TextRun({ text: 'The table below consolidates all recommended policies across the selected baselines, ordered by priority. Affinity IT can assist with the design, testing (Report Only mode), and phased enforcement of these policies in your environment.', font: 'Arial', size: 22, color: '333333' })]
+    }),
+    new Table({
+      width: { size: 9840, type: WidthType.DXA },
+      columnWidths: [600, 1200, 6000, 2040],
+      rows: [
+        tableHeaderRow(['#', 'Policy ID', 'Policy to Implement', 'Priority'], [600, 1200, 6000, 2040]),
+        ...allMissing.map((item, i) => tableBodyRow([
+          String(i + 1), item.id, item.name,
+          [priorityBadge(item.severity.charAt(0).toUpperCase() + item.severity.slice(1))]
+        ], [600, 1200, 6000, 2040], i % 2 === 1))
+      ]
+    }),
+    spacer(240),
+    new Table({
+      width: { size: 9840, type: WidthType.DXA },
+      columnWidths: [9840],
+      rows: [new TableRow({ children: [new TableCell({
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 8, color: MID },
+          bottom: { style: BorderStyle.SINGLE, size: 8, color: MID },
+          left: { style: BorderStyle.SINGLE, size: 24, color: ACCENT },
+          right: cellBorder(BORDER)
+        },
+        shading: { fill: LIGHT, type: ShadingType.CLEAR },
+        margins: { top: 160, bottom: 160, left: 240, right: 240 },
+        width: { size: 9840, type: WidthType.DXA },
+        children: [
+          new Paragraph({ spacing: { before: 0, after: 80 }, children: [new TextRun({ text: '→ Next steps', font: 'Arial', size: 22, bold: true, color: NAVY })] }),
+          new Paragraph({
+            spacing: { before: 0, after: 80 },
+            children: [
+              new TextRun({ text: 'Affinity IT recommends deploying new policies in ', font: 'Arial', size: 22, color: '333333' }),
+              new TextRun({ text: 'Report Only mode', font: 'Arial', size: 22, bold: true, color: MID }),
+              new TextRun({ text: ' first to assess impact before switching to enforcement. This approach avoids accidental lockouts and provides a clear baseline for review.', font: 'Arial', size: 22, color: '333333' })
+            ]
+          }),
+          new Paragraph({
+            children: amName && amEmail ? [
+              new TextRun({ text: 'Contact ', font: 'Arial', size: 22, color: '333333' }),
+              new TextRun({ text: amName, font: 'Arial', size: 22, bold: true, color: NAVY }),
+              new TextRun({ text: ' at ', font: 'Arial', size: 22, color: '333333' }),
+              new TextRun({ text: amEmail, font: 'Arial', size: 22, color: MID }),
+              new TextRun({ text: ' to discuss a phased implementation programme.', font: 'Arial', size: 22, color: '333333' })
+            ] : [
+              new TextRun({ text: 'Contact your Affinity account manager to discuss a phased implementation programme.', font: 'Arial', size: 22, color: '333333' })
+            ]
+          })
+        ]
+      })]})],
+    }),
+    spacer(320)
+  ] : []
+
+  const inventorySection = [
+    ...sectionHeading('Conditional Access Policy Inventory'),
+    new Paragraph({
+      spacing: { before: 0, after: 200 },
+      children: [new TextRun({ text: `The following table lists all ${policies.length} Conditional Access ${policies.length === 1 ? 'policy' : 'policies'} currently configured in your tenant.`, font: 'Arial', size: 22, color: '333333' })]
+    }),
+    new Table({
+      width: { size: 9840, type: WidthType.DXA },
+      columnWidths: [3200, 1200, 1560, 3880],
+      rows: [
+        tableHeaderRow(['Policy Name', 'Status', 'Applies To', 'Grant Controls'], [3200, 1200, 1560, 3880]),
+        ...policies.map((p, i) => tableBodyRow([
+          pv(p, 'DisplayName', 'displayName') || '',
+          stateLabel(stateOf(p)),
+          fmtUsers(pv(pv(p, 'Conditions', 'conditions'), 'Users', 'users')) || '—',
+          fmtGrant(pv(p, 'GrantControls', 'grantControls')) || '—'
+        ], [3200, 1200, 1560, 3880], i % 2 === 1))
+      ]
+    }),
+    spacer(320)
+  ]
+
+  const children = [
+    ...coverPage,
+    ...execSummary,
+    ...baselineSection,
+    ...gapAnalysisSection,
+    ...actionPlanSection,
+    ...inventorySection
+  ]
+
+  const doc = new Document({
+    numbering: {
+      config: [{
+        reference: 'action-list',
+        levels: [{
+          level: 0, format: LevelFormat.DECIMAL, text: '%1.',
+          alignment: AlignmentType.LEFT,
+          style: { paragraph: { indent: { left: 720, hanging: 360 } } }
+        }]
+      }]
+    },
+    styles: {
+      default: { document: { run: { font: 'Arial', size: 22, color: '2C2C2C' } } },
+      paragraphStyles: [
+        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: 36, bold: true, font: 'Arial', color: NAVY }, paragraph: { spacing: { before: 320, after: 160 }, outlineLevel: 0 } },
+        { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: 26, bold: true, font: 'Arial', color: MID }, paragraph: { spacing: { before: 280, after: 120 }, outlineLevel: 1 } }
+      ]
+    },
+    sections: [{
+      properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1200, right: 1200, bottom: 1200, left: 1200 } } },
+      headers: { default: pageHeader },
+      footers: { default: pageFooter },
+      children
+    }]
+  })
+
+  return Packer.toBuffer(doc)
+}
+
 let _win = null
 let _handlersRegistered = false
 
@@ -1257,19 +1708,8 @@ Write-Output "NAME_MAP_END"`,
     const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
     const amName  = accountManager?.name  || null
     const amEmail = accountManager?.email || null
-    const html = generateDocxHtml(orgName, policies, date, nameMap || {}, recommendations || [], amName, amEmail)
-    const escH = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    const headerHtml = `<table style="width:100%;border-collapse:collapse"><tr><td style="font-size:9pt;font-weight:600;color:#1a2d4a;padding:4px 0;border-bottom:2px solid #E8A830">${escH(orgName || 'Security Report')} &middot; Microsoft 365 Security Report</td><td style="font-size:9pt;color:#9ca3af;text-align:right;padding:4px 0;border-bottom:2px solid #E8A830">Confidential</td></tr></table>`
-    const footerHtml = `<p style="font-size:9pt;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:4px;margin:0">Generated by M365 Security Policy Manager &middot; Affinity IT &middot; ${escH(date)}${amName ? ` &middot; ${escH(amName)}` : ''}</p>`
     try {
-      const buffer = await HTMLtoDOCX(html, headerHtml, {
-        table: { row: { cantSplit: true } },
-        footer: true,
-        pageNumber: true,
-        header: true,
-        font: 'Calibri',
-        fontSize: 22,
-      }, footerHtml)
+      const buffer = await generateDocxBuffer(orgName, policies, date, nameMap || {}, recommendations || [], amName, amEmail)
       fs.writeFileSync(filePath, buffer)
       return { path: filePath }
     } catch (err) {
@@ -1282,8 +1722,6 @@ Write-Output "NAME_MAP_END"`,
     if (!psSession.alive) return { items: [], error: 'No active session' }
     const safeQ = safe(query || '')
     if (!safeQ) return { items: [] }
-    // Use $search (substring match) across displayName and UPN — two separate requests
-    // then deduplicate. $search requires ConsistencyLevel:eventual and $count=true.
     const script = `
 try {
   $q = '${safeQ}'
@@ -1300,15 +1738,21 @@ try {
   $result = @($combined | Select-Object -First 15 | ForEach-Object {
     @{ id = $_.id; displayName = $_.displayName; mail = if ($_.mail) { $_.mail } else { $_.userPrincipalName } }
   })
-  if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
+  Write-Output "SEARCH_JSON_START"
+  if ($result.Count -eq 0) { Write-Output '[]' } else { Write-Output ($result | ConvertTo-Json -Compress) }
+  Write-Output "SEARCH_JSON_END"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
 }`
-    const output = await psSession.run(script)
-    const errorLine = output.split('\n').find(l => l.startsWith('ERROR:'))
+    const lines = []
+    await psSession.run(script, l => lines.push(l))
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) return { items: [], error: errorLine.slice(6).trim() }
+    const startIdx = lines.indexOf('SEARCH_JSON_START')
+    const endIdx = lines.indexOf('SEARCH_JSON_END')
+    if (startIdx === -1 || endIdx <= startIdx) return { items: [] }
     try {
-      const items = JSON.parse(output.trim() || '[]')
+      const items = JSON.parse(lines.slice(startIdx + 1, endIdx).join('') || '[]')
       return { items: Array.isArray(items) ? items : [items] }
     } catch {
       return { items: [] }
@@ -1327,15 +1771,21 @@ try {
   $result = @($resp.value | Where-Object { $_ } | ForEach-Object {
     @{ id = $_.id; displayName = $_.displayName; description = $_.description }
   })
-  if ($result.Count -eq 0) { '[]' } else { $result | ConvertTo-Json -Compress }
+  Write-Output "SEARCH_JSON_START"
+  if ($result.Count -eq 0) { Write-Output '[]' } else { Write-Output ($result | ConvertTo-Json -Compress) }
+  Write-Output "SEARCH_JSON_END"
 } catch {
   Write-Output "ERROR: $($_.Exception.Message)"
 }`
-    const output = await psSession.run(script)
-    const errorLine = output.split('\n').find(l => l.startsWith('ERROR:'))
+    const lines = []
+    await psSession.run(script, l => lines.push(l))
+    const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) return { items: [], error: errorLine.slice(6).trim() }
+    const startIdx = lines.indexOf('SEARCH_JSON_START')
+    const endIdx = lines.indexOf('SEARCH_JSON_END')
+    if (startIdx === -1 || endIdx <= startIdx) return { items: [] }
     try {
-      const items = JSON.parse(output.trim() || '[]')
+      const items = JSON.parse(lines.slice(startIdx + 1, endIdx).join('') || '[]')
       return { items: Array.isArray(items) ? items : [items] }
     } catch {
       return { items: [] }

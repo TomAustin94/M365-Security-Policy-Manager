@@ -1472,28 +1472,60 @@ function registerIpcHandlers(win) {
 $ctx = Get-MgContext
 $scopes = if ($ctx -and $ctx.Scopes) { @($ctx.Scopes) } else { @() }
 if (-not ($scopes -contains 'Policy.ReadWrite.ConditionalAccess')) {
-  Write-Output "ERROR_NO_SCOPE: Token lacks Policy.ReadWrite.ConditionalAccess. Disconnect and reconnect — you will be prompted for a new device code to re-authenticate with the correct permissions."
+  Write-Output "ERROR_NO_SCOPE: Token lacks Policy.ReadWrite.ConditionalAccess. Disconnect and reconnect to re-authenticate."
 } else {
+  # Check if the policy is Microsoft-managed (templateId set = read-only)
   try {
-    $body = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'))
-    Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body $body -ContentType 'application/json' | Out-Null
-    Write-Output "SUCCESS"
-  } catch {
-    $errMsg = $_.Exception.Message
-    $errDetails = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { '' }
-    if ($errMsg -match '403|Forbidden') {
-      Write-Output "ERROR_403_ROLE: Token has the required scope but the signed-in account lacks the Conditional Access Administrator or Global Administrator role in this tenant. Error: $errDetails"
+    $pol = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}?\`$select=id,templateId,displayName" -ErrorAction Stop
+    if ($pol.templateId) {
+      Write-Output "ERROR_READONLY: Policy '$($pol.displayName)' is Microsoft-managed (templateId: $($pol.templateId)) and cannot be modified through the API. You can only enable or disable it."
     } else {
-      Write-Output "ERROR: $errMsg$(if ($errDetails) { ' | ' + $errDetails } else { '' })"
+      try {
+        $body = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'))
+        Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies/${safeId}" -Body $body -ContentType 'application/json' | Out-Null
+        Write-Output "SUCCESS"
+      } catch {
+        $errMsg = $_.Exception.Message
+        # Try to extract the actual Graph API error body from the HTTP response
+        $graphCode = ''; $graphMsg = ''
+        try {
+          $resp = $_.Exception | Select-Object -ExpandProperty Response -ErrorAction SilentlyContinue
+          if ($resp) {
+            $bodyStr = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            $parsed = $bodyStr | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($parsed -and $parsed.error) { $graphCode = $parsed.error.code; $graphMsg = $parsed.error.message }
+          }
+        } catch {}
+        if (-not $graphCode) {
+          try {
+            $inner = $_.Exception; while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+            $bodyStr = $inner.Message | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($bodyStr -and $bodyStr.error) { $graphCode = $bodyStr.error.code; $graphMsg = $bodyStr.error.message }
+          } catch {}
+        }
+        $detail = if ($graphCode) { "$graphCode: $graphMsg" } else { $_.ErrorDetails.Message }
+        if ($errMsg -match '403|Forbidden') {
+          Write-Output "ERROR_403: $detail"
+        } else {
+          Write-Output "ERROR: $errMsg$(if ($detail) { ' | ' + $detail } else { '' })"
+        }
+      }
     }
+  } catch {
+    Write-Output "ERROR: $($_.Exception.Message)"
   }
 }`
     const output = await psSession.run(script)
     const lines = output.split('\n')
     const noScope = lines.find(l => l.startsWith('ERROR_NO_SCOPE:'))
     if (noScope) throw new Error(noScope.slice('ERROR_NO_SCOPE:'.length).trim())
-    const roleErr = lines.find(l => l.startsWith('ERROR_403_ROLE:'))
-    if (roleErr) throw new Error(roleErr.slice('ERROR_403_ROLE:'.length).trim())
+    const readOnly = lines.find(l => l.startsWith('ERROR_READONLY:'))
+    if (readOnly) throw new Error(readOnly.slice('ERROR_READONLY:'.length).trim())
+    const err403 = lines.find(l => l.startsWith('ERROR_403:'))
+    if (err403) {
+      const detail = err403.slice('ERROR_403:'.length).trim()
+      throw new Error(`Access denied (403 Forbidden).${detail ? ` Graph error: ${detail}.` : ''} Your account has the correct scope but Graph rejected the request — this can happen if your Global Admin role is assigned via PIM eligibility but not currently activated, or if the token was issued before the role was assigned. Try disconnecting and reconnecting to get a fresh token.`)
+    }
     const errorLine = lines.find(l => l.startsWith('ERROR:'))
     if (errorLine) throw new Error(errorLine.slice('ERROR:'.length).trim())
     return { success: lines.some(l => l.trim() === 'SUCCESS') }
